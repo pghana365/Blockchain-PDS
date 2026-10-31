@@ -1,0 +1,21 @@
+# secrets & Fabric credentials - NEVER commit
+.env
+*.pem
+*_sk
+fabric-gateway/wallet/
+
+# dependencies / build
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# runtime
+*.log
+instance/
+*.sqlite3
+.vscode/
+.idea/

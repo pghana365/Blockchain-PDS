@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block heading %}QR labels ({{ bags|length }}){% endblock %}
+{% block actions %}<button id="print-now" class="btn btn-sm btn-primary no-print" type="button">Print</button>{% endblock %}
+{% block content %}
+<div class="label-sheet">
+  {% for bag in bags %}
+  <div class="label-card">
+    <img src="{{ url_for('api_ops.qr_png', bag_id=bag.bag_id) }}" alt="QR {{ bag.bag_id }}" width="170" height="170">
+    <div class="id">{{ bag.bag_id }}</div>
+    <div class="small text-muted">{{ bag.commodity }} &middot; {{ bag.mls.code }} &rarr; {{ bag.fps.code }}</div>
+  </div>
+  {% else %}<p class="text-muted">No bags selected.</p>{% endfor %}
+</div>
+{% endblock %}

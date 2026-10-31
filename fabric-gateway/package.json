@@ -1,0 +1,17 @@
+{
+  "name": "pds-fabric-gateway",
+  "version": "1.0.0",
+  "description": "Thin REST service over the official Hyperledger Fabric Gateway SDK for the PDS Flask backend",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --env-file=../.env src/server.js",
+    "smoke": "node src/smoke-test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.0",
+    "@hyperledger/fabric-gateway": "^1.7.1",
+    "express": "^4.21.0"
+  }
+}

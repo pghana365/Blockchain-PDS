@@ -1,0 +1,28 @@
+{% macro badge(status) -%}
+  <span class="status status-{{ status }}">{{ status }}</span>
+{%- endmacro %}
+
+{% macro kg(value) -%}{{ '%.3f'|format(value|float) }} kg{%- endmacro %}
+
+{% macro txid(tx) -%}
+  {% if tx %}<span class="mono txid" title="{{ tx }}">{{ tx }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
+{%- endmacro %}
+
+{% macro pager(pg, endpoint, args) -%}
+  {% if pg.pages > 1 %}
+  <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="pages">
+    <span class="text-muted small">Page {{ pg.page }} of {{ pg.pages }} &middot; {{ pg.total }} records</span>
+    <div class="btn-group btn-group-sm">
+      {% set a = args.to_dict() %}{% set _ = a.pop('page', None) %}
+      {% if pg.has_prev %}<a class="btn btn-outline-secondary" href="{{ url_for(endpoint, page=pg.prev_num, **a) }}">Previous</a>{% endif %}
+      {% if pg.has_next %}<a class="btn btn-outline-secondary" href="{{ url_for(endpoint, page=pg.next_num, **a) }}">Next</a>{% endif %}
+    </div>
+  </nav>
+  {% endif %}
+{%- endmacro %}
+
+{% macro stat(label, value, cls='') -%}
+  <div class="col-6 col-md-4 col-xl-3">
+    <div class="card stat-card {{ cls }}"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>
+  </div>
+{%- endmacro %}

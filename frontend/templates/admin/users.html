@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block heading %}Users and access{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header">All users</div>
+      <div class="table-responsive"><table class="table table-hover mb-0">
+        <thead><tr><th>Employee ID</th><th>Name</th><th>Role</th><th>Location</th><th>Fabric identity</th><th>State</th><th></th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td class="fw-semibold">{{ u.username }}</td>
+            <td>{{ u.full_name }}</td>
+            <td>{{ u.role_name.replace('_', ' ').title() }}</td>
+            <td>{{ u.location_label }}</td>
+            <td class="mono">{{ u.fabric_identity or '-' }}</td>
+            <td>
+              {% if u.is_enabled %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Disabled</span>{% endif %}
+              {% if u.locked_until %}<span class="badge text-bg-warning">Locked</span>{% endif %}
+            </td>
+            <td class="text-end text-nowrap">
+              {% if u.id != current_user.id %}
+                {% if u.is_enabled %}
+                <button class="btn btn-sm btn-outline-danger" data-patch="{{ url_for('api_admin.update_user', user_id=u.id) }}" data-json='{"is_enabled": false}' data-confirm="Disable {{ u.username }}? They will be signed out immediately." type="button">Disable</button>
+                {% else %}
+                <button class="btn btn-sm btn-outline-success" data-patch="{{ url_for('api_admin.update_user', user_id=u.id) }}" data-json='{"is_enabled": true}' type="button">Enable</button>
+                {% endif %}
+              {% endif %}
+              <button class="btn btn-sm btn-outline-secondary" data-patch="{{ url_for('api_admin.update_user', user_id=u.id) }}" data-prompt="new_password:New password for {{ u.username }} (min 10 chars, upper+lower+digit)" type="button">Reset password</button>
+              {% if u.locked_until %}<button class="btn btn-sm btn-outline-warning" data-patch="{{ url_for('api_admin.update_user', user_id=u.id) }}" data-json='{"unlock": true}' type="button">Unlock</button>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card">
+      <div class="card-header">Create user</div>
+      <div class="card-body">
+        <form data-api="{{ url_for('api_admin.create_user') }}" data-method="POST" data-reload>
+          <div class="mb-2"><label class="form-label">Employee ID / username</label><input name="username" class="form-control" required maxlength="40"></div>
+          <div class="mb-2"><label class="form-label">Full name</label><input name="full_name" class="form-control" required maxlength="120"></div>
+          <div class="mb-2"><label class="form-label">Initial password</label><input name="password" type="password" class="form-control" required minlength="10" maxlength="128" autocomplete="new-password"></div>
+          <div class="mb-2"><label class="form-label">Role</label>
+            <select name="role" class="form-select" required>
+              {% for r in roles %}<option value="{{ r.name }}">{{ r.name.replace('_', ' ').title() }}</option>{% endfor %}
+            </select></div>
+          <div class="mb-2"><label class="form-label">MLS location <span class="text-muted small">(MLS operators)</span></label>
+            <select name="mls_location_id" class="form-select"><option value="">-</option>
+              {% for l in mls %}<option value="{{ l.id }}">{{ l.code }} - {{ l.name }}</option>{% endfor %}</select></div>
+          <div class="mb-2"><label class="form-label">FPS location <span class="text-muted small">(FPS operators)</span></label>
+            <select name="fps_location_id" class="form-select"><option value="">-</option>
+              {% for l in fps %}<option value="{{ l.id }}">{{ l.code }} - {{ l.name }}</option>{% endfor %}</select></div>
+          <div class="mb-3"><label class="form-label">Fabric identity <span class="text-muted small">(optional)</span></label>
+            <input name="fabric_identity" class="form-control mono" maxlength="64" placeholder="auto, e.g. mls01op">
+            <div class="form-text">Must already be enrolled with <code>fabric/scripts/enroll-identity.sh</code>; it is checked on creation.</div></div>
+          <button class="btn btn-primary w-100" type="submit">Create user</button>
+          <div class="js-result d-none"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

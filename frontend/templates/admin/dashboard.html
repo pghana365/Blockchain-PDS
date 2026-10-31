@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, stat, kg %}
+{% block heading %}Admin dashboard{% endblock %}
+{% block actions %}
+  <a class="btn btn-sm btn-primary" href="{{ url_for('pages.admin_bags') }}">Register bags</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.admin_users') }}">Manage users</a>
+{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  {{ stat('Bags registered', stats.total_bags) }}
+  {{ stat('Bags dispatched', stats.dispatched) }}
+  {{ stat('Bags received', stats.received) }}
+  {{ stat('Pending deliveries', stats.pending_deliveries) }}
+  {{ stat('Matched', stats.matched, 'good') }}
+  {{ stat('Flagged', stats.flagged, 'bad') }}
+  {{ stat('MLS operators', stats.mls_operators) }}
+  {{ stat('FPS operators', stats.fps_operators) }}
+</div>
+{% if stats.chain_sync_pending %}
+<div class="alert alert-warning">{{ stats.chain_sync_pending }} reconciliation record(s) are not yet confirmed on the blockchain. Open the bag and use <em>Retry sync</em>.</div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-xl-7">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between"><span>Latest bags</span><a href="{{ url_for('pages.admin_bags') }}" class="small">View all</a></div>
+      <div class="table-responsive"><table class="table table-hover mb-0">
+        <thead><tr><th>Bag</th><th>Route</th><th>Dispatch</th><th>Receipt</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for b, d, r, c in recent %}
+          <tr>
+            <td><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a></td>
+            <td>{{ b.mls.code }} &rarr; {{ b.fps.code }}</td>
+            <td>{{ kg(d.weight_kg) if d else '-' }}</td>
+            <td>{{ kg(r.weight_kg) if r else '-' }}</td>
+            <td>{{ badge(b.status) }}</td>
+          </tr>
+        {% else %}<tr><td colspan="5" class="text-center text-muted py-4">No bags registered yet.</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between"><span>Largest flagged discrepancies</span><a class="small" href="{{ url_for('pages.discrepancies') }}">Report</a></div>
+      <ul class="list-group list-group-flush">
+      {% for b, c in flagged %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a> <span class="text-muted small">{{ b.mls.code }} &rarr; {{ b.fps.code }}</span></span>
+          <span class="fw-bold text-danger">{{ kg(c.difference_kg) }}</span>
+        </li>
+      {% else %}<li class="list-group-item text-muted">No flagged bags.</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">System</div>
+      <div class="card-body small">
+        <div class="d-flex justify-content-between"><span>Discrepancy tolerance</span><strong>{{ tolerance }} kg</strong></div>
+        <div class="mt-2"><a href="{{ url_for('pages.admin_settings') }}">Change tolerance</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

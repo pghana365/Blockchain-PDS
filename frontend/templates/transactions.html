@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import txid, pager %}
+{% block heading %}Blockchain transaction history{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-sm"><input name="bag" value="{{ args.get('bag', '') }}" class="form-control form-control-sm" placeholder="Filter by Bag ID" maxlength="16"></div>
+      <div class="col-auto"><select name="function" class="form-select form-select-sm"><option value="">All events</option>
+        {% for f in ['RegisterBag','DispatchBag','ReceiveBag','RecordReconciliation','RecordCorrection','GrantRole'] %}
+          <option value="{{ f }}" {{ 'selected' if args.get('function') == f }}>{{ f }}</option>{% endfor %}</select></div>
+      <div class="col-auto"><select name="status" class="form-select form-select-sm"><option value="">Any outcome</option>
+        <option value="COMMITTED" {{ 'selected' if args.get('status') == 'COMMITTED' }}>Committed</option>
+        <option value="FAILED" {{ 'selected' if args.get('status') == 'FAILED' }}>Failed</option></select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" type="submit">Apply</button></div>
+    </form>
+  </div>
+  <div class="table-responsive"><table class="table table-hover mb-0">
+    <thead><tr><th>Time</th><th>Event</th><th>Bag</th><th>Block</th><th>Transaction ID</th><th>Fabric identity</th><th>User</th><th>Outcome</th></tr></thead>
+    <tbody>
+    {% for t in pg.items %}
+      <tr>
+        <td class="small">{{ t.created_at|dt }}</td>
+        <td>{{ t.function }}</td>
+        <td>{% if t.bag %}<a href="{{ url_for('pages.bag_detail', bag_id=t.bag.bag_id) }}">{{ t.bag.bag_id }}</a>{% else %}-{% endif %}</td>
+        <td>{{ t.block_number if t.block_number is not none else '-' }}</td>
+        <td>{{ txid(t.tx_id) }}</td>
+        <td class="mono">{{ t.fabric_identity }}</td>
+        <td>{{ t.user.username if t.user else '-' }}</td>
+        <td>{% if t.status == 'COMMITTED' %}<span class="status status-MATCHED">COMMITTED</span>{% else %}<span class="status status-FLAGGED" title="{{ t.error }}">FAILED</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="text-center text-muted py-4">No transactions.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{{ pager(pg, 'pages.transactions', args) }}
+{% endblock %}

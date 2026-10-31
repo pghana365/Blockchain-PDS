@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, kg, txid %}
+{% block heading %}FPS dashboard{% endblock %}
+{% block actions %}<a class="btn btn-sm btn-primary" href="{{ url_for('pages.scan') }}">Scan QR to receive</a>{% endblock %}
+{% block content %}
+{% set fps = current_user.fps_location %}
+<div class="card mb-3"><div class="card-body d-flex flex-wrap justify-content-between gap-3">
+  <div><div class="text-muted small text-uppercase">Your location</div>
+    <div class="fs-5 fw-semibold">{{ fps.code }} - {{ fps.name }}</div><div class="text-muted">{{ fps.district }}</div></div>
+  <div class="d-flex gap-4">
+    <div><div class="text-muted small">Incoming bags</div><div class="fs-4 fw-bold">{{ incoming|length }}</div></div>
+    <div><div class="text-muted small">Received</div><div class="fs-4 fw-bold">{{ receipts|length }}</div></div>
+  </div>
+</div></div>
+
+<div class="card mb-3">
+  <div class="card-header">Incoming bags (awaiting your weighing)</div>
+  <div class="blind-note m-3 mb-0">Dispatch weights are hidden until you submit your own receiving weight for a bag.</div>
+  <div class="table-responsive"><table class="table table-hover mb-0">
+    <thead><tr><th>Bag</th><th>Commodity</th><th>Consignment</th><th>Origin MLS</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for b in incoming %}
+      <tr>
+        <td><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a></td>
+        <td>{{ b.commodity }}</td><td>{{ b.consignment.code }}</td><td>{{ b.mls.code }}</td>
+        <td>{{ badge(b.status) }}</td>
+        <td class="text-end"><a class="btn btn-sm btn-primary" href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">Weigh &amp; receive</a></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted py-4">No bags are currently in transit to your shop.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card-header">My receipts and reconciliation results</div>
+  <div class="table-responsive"><table class="table table-hover mb-0">
+    <thead><tr><th>Bag</th><th>Received</th><th>My weight</th><th>MLS weight</th><th>Difference</th><th>Result</th><th>Transaction</th></tr></thead>
+    <tbody>
+    {% for b, r, c in receipts %}
+      <tr>
+        <td><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a></td>
+        <td>{{ r.received_at|dt }}</td>
+        <td>{{ kg(r.weight_kg) }}</td>
+        {# a receipt exists, so the comparison is now legitimately visible #}
+        <td>{{ kg(c.dispatch_weight_kg) if c else '-' }}</td>
+        <td>{{ kg(c.difference_kg) if c else '-' }}</td>
+        <td>{{ badge(c.status) if c else badge(b.status) }}</td>
+        <td>{{ txid(r.tx_id) }}</td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="text-center text-muted py-4">No receipts submitted yet.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

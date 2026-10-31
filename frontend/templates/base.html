@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}PDS Weight Verification{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+{% set ep = request.endpoint or '' %}
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="logo">PDS</span><span>Weight Verification</span></div>
+    <nav>
+      <div class="nav-label">Main</div>
+      <a class="nav-item {{ 'active' if ep == 'pages.dashboard' }}" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
+      {% if current_user.is_admin %}
+        <div class="nav-label">Administration</div>
+        <a class="nav-item {{ 'active' if ep == 'pages.admin_bags' }}" href="{{ url_for('pages.admin_bags') }}">Bags and QR codes</a>
+        <a class="nav-item {{ 'active' if ep == 'pages.admin_users' }}" href="{{ url_for('pages.admin_users') }}">Users</a>
+        <a class="nav-item {{ 'active' if ep == 'pages.admin_locations' }}" href="{{ url_for('pages.admin_locations') }}">MLS / FPS locations</a>
+        <a class="nav-item {{ 'active' if ep == 'pages.admin_settings' }}" href="{{ url_for('pages.admin_settings') }}">Settings</a>
+      {% endif %}
+      <div class="nav-label">Operations</div>
+      <a class="nav-item {{ 'active' if ep == 'pages.scan' }}" href="{{ url_for('pages.scan') }}">Scan QR code</a>
+      <div class="nav-label">Records</div>
+      <a class="nav-item {{ 'active' if ep == 'pages.discrepancies' }}" href="{{ url_for('pages.discrepancies') }}">Discrepancy report</a>
+      <a class="nav-item {{ 'active' if ep == 'pages.transactions' }}" href="{{ url_for('pages.transactions') }}">Transaction history</a>
+      {% if current_user.is_admin or current_user.is_auditor %}
+        <a class="nav-item {{ 'active' if ep == 'pages.audit_logs' }}" href="{{ url_for('pages.audit_logs') }}">Audit log</a>
+      {% endif %}
+    </nav>
+    <div class="user-box">
+      <div class="name">{{ current_user.full_name }}</div>
+      <div>{{ current_user.role_name.replace('_', ' ').title() }}</div>
+      <div class="text-truncate">{{ current_user.location_label }}</div>
+      <form method="post" action="{{ url_for('auth.logout') }}" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-light w-100" type="submit">Sign out</button>
+      </form>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-secondary menu-toggle" type="button" aria-label="Menu">&#9776;</button>
+        <h1>{% block heading %}{% endblock %}</h1>
+      </div>
+      <div class="d-flex gap-2">{% block actions %}{% endblock %}</div>
+    </header>
+    <main class="content">
+      <div id="flash" class="d-none" role="status"></div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

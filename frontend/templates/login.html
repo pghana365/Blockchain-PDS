@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in - PDS Weight Verification</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <section class="login-hero">
+    <h1>Blind Weight Verification<br>for the Public Distribution System</h1>
+    <p class="mt-3 mb-4">Every rice bag is weighed independently at the Mandala Level Stock and again at the Fair Price Shop. Discrepancies are flagged for review and the history is anchored on Hyperledger Fabric.</p>
+    <ul class="list-unstyled small opacity-75">
+      <li>&#10003; Independent measurements - the receiving weight is entered blind</li>
+      <li>&#10003; Tamper-evident history on a permissioned blockchain</li>
+      <li>&#10003; Role- and location-based access control</li>
+    </ul>
+  </section>
+  <section class="login-form">
+    <div class="box">
+      <h2 class="mb-1">Sign in</h2>
+      <p class="text-muted">Use your employee ID and password.</p>
+      {% if next %}<div class="alert alert-info py-2 small">Sign in to continue to the scanned bag.</div>{% endif %}
+      {% if error %}<div class="alert alert-danger py-2" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" action="{{ url_for('auth.login') }}" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="mb-3">
+          <label class="form-label" for="username">Employee ID / username</label>
+          <input class="form-control form-control-lg" id="username" name="username" maxlength="40" required autofocus autocomplete="username">
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="password">Password</label>
+          <input class="form-control form-control-lg" id="password" name="password" type="password" maxlength="128" required autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary btn-lg w-100" type="submit">Sign in</button>
+      </form>
+      <p class="text-muted small mt-4">Access is logged and monitored. Accounts lock for 15 minutes after 5 failed attempts.</p>
+    </div>
+  </section>
+</div>
+</body>
+</html>

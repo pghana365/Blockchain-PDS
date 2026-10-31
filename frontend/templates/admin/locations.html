@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% macro loc_table(title, kind, items) %}
+<div class="card mb-3">
+  <div class="card-header">{{ title }}</div>
+  <div class="table-responsive"><table class="table mb-0">
+    <thead><tr><th>Code</th><th>Name</th><th>District</th><th>State</th><th></th></tr></thead>
+    <tbody>
+    {% for l in items %}
+      <tr><td class="fw-semibold">{{ l.code }}</td><td>{{ l.name }}</td><td>{{ l.district }}</td>
+        <td>{% if l.is_active %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Inactive</span>{% endif %}</td>
+        <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary"
+           data-patch="{{ url_for('api_admin.update_location', kind=kind, loc_id=l.id) }}"
+           data-json='{"is_active": {{ 'false' if l.is_active else 'true' }}}'>{{ 'Deactivate' if l.is_active else 'Activate' }}</button></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endmacro %}
+{% block heading %}MLS and FPS locations{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-xl-8">
+    {{ loc_table('Mandala Level Stock points (MLS)', 'MLS', mls) }}
+    {{ loc_table('Fair Price Shops (FPS)', 'FPS', fps) }}
+  </div>
+  <div class="col-xl-4">
+    <div class="card"><div class="card-header">Add location</div><div class="card-body">
+      <form data-api="{{ url_for('api_admin.create_location') }}" data-method="POST" data-reload>
+        <div class="mb-2"><label class="form-label">Type</label><select name="kind" class="form-select"><option>MLS</option><option>FPS</option></select></div>
+        <div class="mb-2"><label class="form-label">Code</label><input name="code" class="form-control" placeholder="MLS-03 / FPS-03" required maxlength="16"></div>
+        <div class="mb-2"><label class="form-label">Name</label><input name="name" class="form-control" required maxlength="120"></div>
+        <div class="mb-3"><label class="form-label">District</label><input name="district" class="form-control" required maxlength="80"></div>
+        <button class="btn btn-primary w-100" type="submit">Add location</button>
+        <div class="js-result d-none"></div>
+      </form>
+      <p class="text-muted small mt-3 mb-0">After adding a location, enrol a Fabric identity for its operators: <code>enroll-identity.sh &lt;org&gt; &lt;id&gt; &lt;role&gt; &lt;code&gt;</code>.</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

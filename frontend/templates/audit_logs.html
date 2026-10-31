@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager %}
+{% block heading %}Audit log{% endblock %}
+{% block content %}
+<div class="alert {{ 'alert-success' if integrity[0] else 'alert-danger' }} py-2">
+  Hash-chain integrity: <strong>{{ 'intact' if integrity[0] else 'BROKEN at entry ' ~ integrity[2] }}</strong> - {{ integrity[1] }} entries verified. Each entry's hash covers the previous entry, so any edit or deletion is detectable.
+</div>
+<div class="card">
+  <div class="card-header">
+    <form method="get" class="row g-2">
+      <div class="col-sm"><input name="user" value="{{ args.get('user', '') }}" class="form-control form-control-sm" placeholder="Username" maxlength="40"></div>
+      <div class="col-sm"><select name="action" class="form-select form-select-sm"><option value="">All actions</option>
+        {% for a in actions %}<option value="{{ a }}" {{ 'selected' if args.get('action') == a }}>{{ a }}</option>{% endfor %}</select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" type="submit">Apply</button></div>
+    </form>
+  </div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0">
+    <thead><tr><th>#</th><th>Time</th><th>User</th><th>Action</th><th>Entity</th><th>Detail</th><th>IP</th></tr></thead>
+    <tbody>
+    {% for e in pg.items %}
+      <tr>
+        <td class="text-muted">{{ e.id }}</td><td class="small text-nowrap">{{ e.created_at|dt }}</td>
+        <td>{{ e.username or '-' }}</td>
+        <td><span class="fw-semibold {{ 'text-danger' if 'DENIED' in e.action or 'FAILED' in e.action or 'REJECTED' in e.action }}">{{ e.action }}</span></td>
+        <td>{{ e.entity_type or '' }} {{ e.entity_id or '' }}</td>
+        <td class="small text-muted mono">{{ (e.detail or '')[:120] }}</td>
+        <td class="small">{{ e.ip_address or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{{ pager(pg, 'pages.audit_logs', args) }}
+{% endblock %}

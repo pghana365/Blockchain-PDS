@@ -1,0 +1,16 @@
+{
+  "name": "pds-contract",
+  "version": "1.0.0",
+  "description": "PDS blind weight verification chaincode (Hyperledger Fabric)",
+  "main": "index.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "fabric-chaincode-node start",
+    "test": "node --test test/pds-contract.test.js"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "fabric-contract-api": "^2.5.8",
+    "fabric-shim": "^2.5.8"
+  }
+}

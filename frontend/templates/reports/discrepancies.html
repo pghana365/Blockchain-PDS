@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, kg %}
+{% block heading %}Discrepancy report{% endblock %}
+{% block actions %}
+  {% if show_all %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.discrepancies') }}">Flagged only</a>
+  {% else %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.discrepancies', all=1) }}">Include matched</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="alert alert-info py-2">
+  Current tolerance: <strong>{{ tolerance }} kg</strong>. A flagged bag is a quantity difference that <strong>requires further verification</strong>; it is not, by itself, evidence of theft or fraud (scale calibration, moisture, handling and transit losses can all contribute).
+</div>
+<div class="card">
+  <div class="table-responsive"><table class="table table-hover mb-0">
+    <thead><tr><th>Bag</th><th>Route</th><th>MLS weight</th><th>FPS weight</th><th>Difference</th><th>Tolerance used</th><th>Result</th><th>Computed</th></tr></thead>
+    <tbody>
+    {% for b, c in rows %}
+      <tr>
+        <td><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a></td>
+        <td>{{ b.mls.code }} &rarr; {{ b.fps.code }}</td>
+        <td>{{ kg(c.dispatch_weight_kg) }}</td>
+        <td>{{ kg(c.receipt_weight_kg) }}</td>
+        <td class="fw-bold {{ 'text-danger' if c.status == 'FLAGGED' else 'text-success' }}">{{ kg(c.difference_kg) }}</td>
+        <td>{{ kg(c.tolerance_kg) }}</td>
+        <td>{{ badge(c.status) }}</td>
+        <td class="small">{{ c.computed_at|dt }}</td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="text-center text-muted py-4">No {{ '' if show_all else 'flagged ' }}reconciliations to show.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

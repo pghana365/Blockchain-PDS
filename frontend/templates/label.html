@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block heading %}QR label - {{ bag.bag_id }}{% endblock %}
+{% block actions %}<button id="print-now" class="btn btn-sm btn-primary no-print" type="button">Print</button>{% endblock %}
+{% block content %}
+<div class="label-sheet">
+  <div class="label-card">
+    <img src="{{ url_for('api_ops.qr_png', bag_id=bag.bag_id) }}" alt="QR {{ bag.bag_id }}" width="170" height="170">
+    <div class="id">{{ bag.bag_id }}</div>
+    <div class="small text-muted">{{ bag.commodity }} &middot; {{ bag.mls.code }} &rarr; {{ bag.fps.code }}</div>
+  </div>
+</div>
+<p class="text-muted small mt-3 no-print">Permanent label: the same QR code is scanned at the MLS (dispatch) and at the FPS (receipt). It contains only a link with the Bag ID.</p>
+{% endblock %}

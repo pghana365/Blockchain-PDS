@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block heading %}System settings{% endblock %}
+{% block content %}
+<div class="row"><div class="col-lg-6">
+  <div class="card"><div class="card-header">Discrepancy tolerance</div><div class="card-body">
+    <p class="text-muted">If the absolute difference between the MLS dispatch weight and the FPS receiving weight is <strong>less than or equal to</strong> this tolerance the bag is MATCHED; otherwise it is FLAGGED for further verification.</p>
+    <form data-api="{{ url_for('api_admin.set_tolerance') }}" data-method="PUT">
+      <label class="form-label" for="tol">Tolerance (kg)</label>
+      <div class="input-group mb-2" >
+        <input id="tol" name="tolerance_kg" class="form-control" value="{{ tolerance }}" inputmode="decimal" required>
+        <span class="input-group-text">kg</span>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+      <div class="js-result d-none"></div>
+    </form>
+    <p class="text-muted small mt-3 mb-0">Changes apply to future receipts only. Each reconciliation stores the tolerance that was in force when it was computed, and changes are written to the audit log.</p>
+  </div></div>
+</div></div>
+{% endblock %}

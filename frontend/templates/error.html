@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ code }} - PDS Weight Verification</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div class="container py-5">
+    <div class="row justify-content-center"><div class="col-md-7 col-lg-5">
+      <div class="card"><div class="card-body text-center py-5">
+        <div class="display-3 text-muted">{{ code }}</div>
+        <p class="lead my-4">{{ message }}</p>
+        {% if current_user.is_authenticated %}
+          <a class="btn btn-primary" href="{{ url_for('pages.dashboard') }}">Back to dashboard</a>
+        {% else %}
+          <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Sign in</a>
+        {% endif %}
+      </div></div>
+    </div></div>
+  </div>
+</body>
+</html>

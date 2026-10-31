@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block heading %}Scan bag QR code{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card"><div class="card-body">
+      <div class="scanner-box mb-3">
+        <video id="scan-video" playsinline muted></video>
+        <div class="frame"></div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button id="scan-start" class="btn btn-primary" type="button">Start camera</button>
+        <button id="scan-stop" class="btn btn-outline-secondary d-none" type="button">Stop camera</button>
+        <label class="btn btn-outline-secondary mb-0">Upload QR image
+          <input id="scan-file" type="file" accept="image/*" class="d-none">
+        </label>
+      </div>
+      <div id="scan-result" class="d-none" role="status"></div>
+      <p class="text-muted small mt-3 mb-0">Camera scanning works on <code>http://localhost</code> or over HTTPS. Point the camera at the QR code on the bag; you will be taken to the screen allowed for your role and location.</p>
+    </div></div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card"><div class="card-header">Enter Bag ID manually</div>
+      <div class="card-body">
+        <form id="manual-form" novalidate>
+          <label class="form-label" for="manual-code">Bag ID</label>
+          <div class="input-group">
+            <input id="manual-code" name="code" class="form-control" placeholder="BAG-0001" maxlength="64" autocomplete="off" required>
+            <button class="btn btn-outline-primary" type="submit">Open</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/jsQR.js') }}"></script>
+<script src="{{ url_for('static', filename='js/scan.js') }}"></script>
+{% endblock %}

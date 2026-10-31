@@ -1,0 +1,25 @@
+# MySQL for the PDS application. Fabric itself is started by fabric/scripts/*.sh
+# (official test-network). Credentials come from .env (never committed).
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pds-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pds}
+      MYSQL_USER: ${MYSQL_USER:-pds}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3307}:3306"
+    volumes:
+      - pds_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pds_mysql_data:

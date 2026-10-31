@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, txid %}
+{% block title %}{{ bag.bag_id }} - PDS{% endblock %}
+{% block heading %}{{ bag.bag_id }} {{ badge(bag.status) }}{% endblock %}
+{% block actions %}
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.scan') }}">Scan another</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.bag_label', bag_id=bag.bag_id) }}" target="_blank" rel="noopener">Print QR label</a>
+{% endblock %}
+
+{% block content %}
+<div id="bag-root" data-bag-id="{{ bag.bag_id }}"></div>
+<div class="row g-3">
+  <div class="col-lg-8">
+
+    {# ---------------- action panels ---------------- #}
+    {% if bag.can_dispatch %}
+    <div class="card mb-3 border-primary">
+      <div class="card-header">Dispatch this bag from {{ bag.origin_mls.code }}</div>
+      <div class="card-body">
+        <p class="text-muted mb-3">Weigh the full bag (rice + jute bag) and enter the <strong>gross weight in kg</strong>. Destination: <strong>{{ bag.destination_fps.code }} - {{ bag.destination_fps.name }}</strong>.</p>
+        <form id="weight-form" data-kind="dispatch" novalidate>
+          <label class="form-label" for="weight-kg">Gross weight (kg)</label>
+          <div class="d-flex flex-wrap gap-3 align-items-center">
+            <input id="weight-kg" class="form-control weight-input" inputmode="decimal" placeholder="0.000" autocomplete="off" required autofocus>
+            <button class="btn btn-primary btn-lg" type="submit">Confirm dispatch</button>
+          </div>
+          <div id="weight-result" class="d-none" role="alert"></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if bag.can_receive %}
+    <div class="card mb-3 border-primary">
+      <div class="card-header">Receive this bag at {{ bag.destination_fps.code }}</div>
+      <div class="card-body">
+        <div class="blind-note mb-3"><strong>Blind verification.</strong> Weigh the bag yourself and enter what <em>your scale</em> shows. The dispatch weight is intentionally hidden until you submit, so the two measurements stay independent.</div>
+        <form id="weight-form" data-kind="receive" novalidate>
+          <label class="form-label" for="weight-kg">Gross weight measured here (kg)</label>
+          <div class="d-flex flex-wrap gap-3 align-items-center">
+            <input id="weight-kg" class="form-control weight-input" inputmode="decimal" placeholder="0.000" autocomplete="off" required autofocus>
+            <button class="btn btn-primary btn-lg" type="submit">Confirm receipt</button>
+          </div>
+          <div id="weight-result" class="d-none" role="alert"></div>
+        </form>
+      </div>
+    </div>
+    {% elif current_user.is_fps and bag.status == 'REGISTERED' %}
+    <div class="alert alert-secondary">This bag has not been dispatched yet. It can be received once the MLS dispatches it.</div>
+    {% endif %}
+
+    {# ---------------- final result ---------------- #}
+    {% if bag.reconciliation %}
+    {% set r = bag.reconciliation %}
+    <div class="result-panel {{ 'flagged' if r.status == 'FLAGGED' else 'matched' }} mb-3">
+      <div class="d-flex justify-content-between flex-wrap gap-2">
+        <div>
+          <div class="text-uppercase small fw-semibold opacity-75">Reconciliation result</div>
+          <div class="big">{{ 'DISCREPANCY FLAGGED' if r.status == 'FLAGGED' else 'MATCHED' }}</div>
+        </div>
+        {{ badge(r.status) }}
+      </div>
+      <hr>
+      <div class="row text-center g-2">
+        <div class="col-6 col-md-3"><div class="small opacity-75">MLS dispatch weight</div><div class="fs-5 fw-bold">{{ r.dispatch_weight_kg }} kg</div></div>
+        <div class="col-6 col-md-3"><div class="small opacity-75">FPS receiving weight</div><div class="fs-5 fw-bold">{{ r.receipt_weight_kg }} kg</div></div>
+        <div class="col-6 col-md-3"><div class="small opacity-75">Difference</div><div class="fs-5 fw-bold">{{ r.difference_kg }} kg</div></div>
+        <div class="col-6 col-md-3"><div class="small opacity-75">Allowed tolerance</div><div class="fs-5 fw-bold">{{ r.tolerance_kg }} kg</div></div>
+      </div>
+      <p class="mb-0 mt-3">{{ r.message }}</p>
+      {% if r.chain_status != 'CONFIRMED' %}
+        <p class="mb-0 mt-2 small"><strong>Blockchain sync pending</strong> for the reconciliation record.
+          {% if current_user.is_admin %}<button id="retry-sync" type="button" class="btn btn-sm btn-dark ms-2">Retry sync</button>{% endif %}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ---------------- dispatch / receipt records ---------------- #}
+    <div class="row g-3 mb-3">
+      {% if bag.dispatch %}
+      <div class="col-md-6"><div class="card h-100">
+        <div class="card-header">MLS dispatch record</div>
+        <div class="card-body"><dl class="kv">
+          <dt>Gross weight</dt><dd class="fw-bold">{{ bag.dispatch.weight_kg }} kg</dd>
+          <dt>Dispatched at</dt><dd>{{ bag.dispatch.dispatched_at|dt }}</dd>
+          <dt>Operator</dt><dd>{{ bag.dispatch.operator }} <span class="text-muted">({{ bag.dispatch.operator_username }})</span></dd>
+          <dt>MLS</dt><dd>{{ bag.dispatch.mls }}</dd>
+          <dt>Transaction ID</dt><dd>{{ txid(bag.dispatch.tx_id) }}</dd>
+        </dl></div>
+      </div></div>
+      {% elif current_user.is_fps and bag.dispatched and not bag.received %}
+      <div class="col-md-6"><div class="card h-100"><div class="card-header">Dispatch status</div>
+        <div class="card-body"><p class="mb-1"><strong>Dispatched by MLS</strong> - in transit to your shop.</p>
+        <p class="text-muted small mb-0">Weight details are shown after you submit your own receiving weight.</p></div></div></div>
+      {% endif %}
+      {% if bag.receipt %}
+      <div class="col-md-6"><div class="card h-100">
+        <div class="card-header">FPS receipt record</div>
+        <div class="card-body"><dl class="kv">
+          <dt>Gross weight</dt><dd class="fw-bold">{{ bag.receipt.weight_kg }} kg</dd>
+          <dt>Received at</dt><dd>{{ bag.receipt.received_at|dt }}</dd>
+          <dt>Operator</dt><dd>{{ bag.receipt.operator }} <span class="text-muted">({{ bag.receipt.operator_username }})</span></dd>
+          <dt>FPS</dt><dd>{{ bag.receipt.fps }}</dd>
+          <dt>Transaction ID</dt><dd>{{ txid(bag.receipt.tx_id) }}</dd>
+        </dl></div>
+      </div></div>
+      {% endif %}
+    </div>
+
+    {# ---------------- blockchain transactions ---------------- #}
+    <div class="card mb-3">
+      <div class="card-header">Blockchain transactions</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Event</th><th>Block</th><th>Transaction ID</th><th>By</th><th>Time</th></tr></thead>
+        <tbody>
+        {% for t in bag.transactions %}
+          <tr><td>{{ t.function }}</td><td>{{ t.block_number }}</td><td>{{ txid(t.tx_id) }}</td><td>{{ t.operator }}</td><td>{{ t.at|dt }}</td></tr>
+        {% else %}
+          <tr><td colspan="5" class="text-muted text-center py-3">No transactions recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+
+    {% if current_user.is_admin or current_user.is_auditor %}
+    <div class="card mb-3">
+      <div class="card-header">Integrity check (auditor / admin)</div>
+      <div class="card-body">
+        <p class="text-muted small">Recomputes each weight commitment from the database and compares it with the value stored on the Hyperledger Fabric ledger. A passing check shows that records were not altered after submission. It does <strong>not</strong> prove that the physical weighing was accurate.</p>
+        <button id="verify-btn" class="btn btn-outline-primary btn-sm" type="button">Verify against blockchain</button>
+        <button id="history-btn" class="btn btn-outline-secondary btn-sm" type="button">Show on-chain state history</button>
+        <div id="verify-result" class="mt-3"></div>
+        <div id="history-result"></div>
+      </div>
+    </div>
+    {% if bag.corrections %}
+    <div class="card mb-3"><div class="card-header">Corrections (separate audit events)</div>
+      <ul class="list-group list-group-flush">
+      {% for c in bag.corrections %}<li class="list-group-item">{{ c.note }}<div class="small text-muted">{{ c.by }} &middot; {{ c.at|dt }} &middot; <span class="mono">{{ c.tx_id }}</span></div></li>{% endfor %}
+      </ul></div>
+    {% endif %}
+    {% endif %}
+    {% if current_user.is_admin %}
+    <div class="card mb-3">
+      <div class="card-header">Record a correction</div>
+      <div class="card-body">
+        <p class="text-muted small">Historical dispatch and receipt records can never be overwritten. A correction is stored as a new, separate event on the ledger and in the audit log.</p>
+        <form id="correction-form">
+          <textarea name="note" class="form-control mb-2" rows="2" minlength="5" maxlength="500" required placeholder="Explain what needs correcting and why (5-500 characters)"></textarea>
+          <button class="btn btn-outline-dark btn-sm" type="submit">Record correction</button>
+          <div id="correction-result" class="d-none"></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header">Bag information</div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Bag ID</dt><dd class="fw-bold">{{ bag.bag_id }}</dd>
+          <dt>Commodity</dt><dd>{{ bag.commodity }}</dd>
+          <dt>Consignment</dt><dd>{{ bag.consignment_id }}</dd>
+          <dt>Origin MLS</dt><dd>{{ bag.origin_mls.code }}<br><span class="text-muted small">{{ bag.origin_mls.name }}</span></dd>
+          <dt>Destination FPS</dt><dd>{{ bag.destination_fps.code }}<br><span class="text-muted small">{{ bag.destination_fps.name }}</span></dd>
+          <dt>Status</dt><dd>{{ badge(bag.status) }}</dd>
+          <dt>Registered</dt><dd>{{ bag.registered_at|dt }}</dd>
+          <dt>Register tx</dt><dd>{{ txid(bag.register_tx_id) }}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Permanent QR code</div>
+      <div class="card-body text-center">
+        <img class="qr-img" src="{{ url_for('api_ops.qr_png', bag_id=bag.bag_id) }}" alt="QR code for {{ bag.bag_id }}" width="200" height="200">
+        <p class="small text-muted mt-2 mb-0">Contains only a link with the Bag ID. The same code is used at the MLS and the FPS.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/bag.js') }}"></script>{% endblock %}
