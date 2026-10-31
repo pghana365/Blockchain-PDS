@@ -68,7 +68,7 @@ def bag_detail(bag_id):
 
 
 @bp.get("/reports/discrepancies")
-@login_required
+@roles_required(ROLE_ADMIN, ROLE_AUDITOR)
 def discrepancies():
     show_all = request.args.get("all") == "1"
     rows = reports.discrepancy_rows(current_user, only_flagged=not show_all)
@@ -77,7 +77,7 @@ def discrepancies():
 
 
 @bp.get("/transactions")
-@login_required
+@roles_required(ROLE_ADMIN, ROLE_AUDITOR)
 def transactions():
     page = max(1, request.args.get("page", 1, type=int))
     q = reports.transactions_query(current_user, request.args.get("bag") or None,

@@ -3,8 +3,9 @@ import pytest
 
 from conftest import dispatch, receive
 
-COMMON = ["/dashboard", "/scan", "/reports/discrepancies", "/reports/discrepancies?all=1", "/transactions",
-          "/transactions?bag=BAG-0001&function=DispatchBag&status=COMMITTED"]
+COMMON = ["/dashboard", "/scan"]
+AUDIT_RECORDS = ["/reports/discrepancies", "/reports/discrepancies?all=1", "/transactions",
+                 "/transactions?bag=BAG-0001&function=DispatchBag&status=COMMITTED"]
 ADMIN_ONLY = ["/admin/users", "/admin/locations", "/admin/bags", "/admin/bags?q=BAG&status=FLAGGED",
               "/admin/settings", "/admin/labels?ids=BAG-0001", "/audit-logs", "/audit-logs?action=LOGIN_SUCCESS&user=admin"]
 
@@ -22,6 +23,21 @@ def test_common_pages_render(app, clients, populated, who):
         r = clients[who].get(url)
         assert r.status_code == 200, (who, url, r.status_code)
         assert b"Traceback" not in r.data and b"UndefinedError" not in r.data
+
+
+@pytest.mark.parametrize("who", ["admin", "auditor"])
+def test_audit_record_pages_render(app, clients, populated, who):
+    for url in AUDIT_RECORDS:
+        assert clients[who].get(url).status_code == 200, (who, url)
+
+
+@pytest.mark.parametrize("who", ["mls1", "fps1"])
+def test_operational_roles_cannot_access_audit_record_pages(app, clients, populated, who):
+    for url in AUDIT_RECORDS:
+        assert clients[who].get(url).status_code == 403, (who, url)
+    dashboard = clients[who].get("/dashboard").get_data(as_text=True)
+    assert "Discrepancy report" not in dashboard
+    assert "Transaction history" not in dashboard
 
 
 @pytest.mark.parametrize("who", ["admin", "auditor"])

@@ -25,10 +25,10 @@
       {% endif %}
       <div class="nav-label">Operations</div>
       <a class="nav-item {{ 'active' if ep == 'pages.scan' }}" href="{{ url_for('pages.scan') }}">Scan QR code</a>
-      <div class="nav-label">Records</div>
-      <a class="nav-item {{ 'active' if ep == 'pages.discrepancies' }}" href="{{ url_for('pages.discrepancies') }}">Discrepancy report</a>
-      <a class="nav-item {{ 'active' if ep == 'pages.transactions' }}" href="{{ url_for('pages.transactions') }}">Transaction history</a>
       {% if current_user.is_admin or current_user.is_auditor %}
+        <div class="nav-label">Records</div>
+        <a class="nav-item {{ 'active' if ep == 'pages.discrepancies' }}" href="{{ url_for('pages.discrepancies') }}">Discrepancy report</a>
+        <a class="nav-item {{ 'active' if ep == 'pages.transactions' }}" href="{{ url_for('pages.transactions') }}">Transaction history</a>
         <a class="nav-item {{ 'active' if ep == 'pages.audit_logs' }}" href="{{ url_for('pages.audit_logs') }}">Audit log</a>
       {% endif %}
     </nav>

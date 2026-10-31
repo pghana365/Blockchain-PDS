@@ -50,10 +50,12 @@ def test_03_fps_cannot_see_mls_weight_before_receipt(app, clients, bag):
     assert "50.5" not in api.get_data(as_text=True)
     assert "commitment" not in api.get_data(as_text=True)
     # every FPS-facing page must be free of the weight too
-    for url in (f"/b/{bag}", "/dashboard", "/reports/discrepancies?all=1", "/transactions"):
+    for url in (f"/b/{bag}", "/dashboard"):
         page = fps.get(url)
         assert page.status_code == 200, url
         assert "50.5" not in page.get_data(as_text=True), url
+    for url in ("/reports/discrepancies?all=1", "/transactions"):
+        assert fps.get(url).status_code == 403, url
     # the data layer refuses to return the row
     from app.models import User
     from app.services import access

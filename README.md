@@ -40,8 +40,8 @@ Demo users (all use `SEED_PASSWORD` from your `.env`): `admin`, `mls01.operator`
 | Role | Can do | Cannot do |
 |---|---|---|
 | Admin | create users/locations, register bags, QR labels, set tolerance, view everything, record corrections | edit/delete dispatch, receipt or ledger records |
-| MLS operator | see own MLS bags, scan, enter gross weight, dispatch, see own dispatch weight and final result | touch other MLS locations or any receipt |
-| FPS operator | see incoming bags, scan, enter **own** weight, confirm receipt, then see the comparison | see the MLS weight/difference before submitting; touch other FPS bags |
+| MLS operator | see own MLS bags, scan, enter gross weight, dispatch, see own dispatch weight and final result | touch other MLS locations or any receipt; access discrepancy reports or transaction history |
+| FPS operator | see incoming bags, scan, enter **own** weight, confirm receipt, then see the comparison | see the MLS weight/difference before submitting; touch other FPS bags; access discrepancy reports or transaction history |
 | Auditor | read-only: all bags, weights, differences, tx IDs, history, audit log, integrity check | change anything |
 
 ## Where the pieces are
