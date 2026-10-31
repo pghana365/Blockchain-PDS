@@ -60,7 +60,7 @@ def bag_view(user, bag, with_transactions=True):
             "message": FLAG_MESSAGE if c.status == STATUS_FLAGGED else MATCH_MESSAGE,
         }
 
-    if with_transactions:
+    if with_transactions and (user.is_admin or user.is_auditor):
         txs = (BlockchainTransaction.query.filter_by(bag_pk=bag.id, status="COMMITTED")
                .order_by(BlockchainTransaction.id.asc()).all())
         v["transactions"] = [{
@@ -68,8 +68,7 @@ def bag_view(user, bag, with_transactions=True):
             "identity": t.fabric_identity, "operator": t.user.username if t.user else None,
             "at": iso(t.created_at),
         } for t in txs]
-        if user.is_admin or user.is_auditor:
-            v["corrections"] = [{
-                "note": x.note, "by": x.admin.username, "tx_id": x.tx_id, "at": iso(x.created_at)
-            } for x in Correction.query.filter_by(bag_pk=bag.id).order_by(Correction.id).all()]
+        v["corrections"] = [{
+            "note": x.note, "by": x.admin.username, "tx_id": x.tx_id, "at": iso(x.created_at)
+        } for x in Correction.query.filter_by(bag_pk=bag.id).order_by(Correction.id).all()]
     return v

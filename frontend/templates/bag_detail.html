@@ -107,6 +107,7 @@
       {% endif %}
     </div>
 
+    {% if current_user.is_admin or current_user.is_auditor %}
     {# ---------------- blockchain transactions ---------------- #}
     <div class="card mb-3">
       <div class="card-header">Blockchain transactions</div>
@@ -121,6 +122,7 @@
         </tbody>
       </table></div>
     </div>
+    {% endif %}
 
     {% if current_user.is_admin or current_user.is_auditor %}
     <div class="card mb-3">

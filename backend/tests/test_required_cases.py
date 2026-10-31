@@ -173,6 +173,10 @@ def test_12_auditor_inspects_complete_history(app, clients, bag):
     assert [t["function"] for t in d["transactions"]] == ["RegisterBag", "DispatchBag", "ReceiveBag", "RecordReconciliation"]
     assert all(t["tx_id"] and t["operator"] for t in d["transactions"])
     assert d["dispatch"]["operator_username"] == "mls01.operator" and d["receipt"]["operator_username"] == "fps01.operator"
+    for who in ("mls1", "fps1"):
+        operational = clients[who].get(f"/api/bags/{bag}")
+        assert "transactions" not in operational.get_json()
+        assert b"Blockchain transactions" not in clients[who].get(f"/b/{bag}").data
     for url in ("/dashboard", f"/b/{bag}", "/transactions", "/audit-logs", "/reports/discrepancies"):
         assert a.get(url).status_code == 200, url
     assert "BAG-0001" in a.get("/dashboard?q=BAG-0001").get_data(as_text=True)
