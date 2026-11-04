@@ -25,13 +25,13 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import (Bag, BlockchainTransaction, Consignment, Correction, DispatchRecord, FpsLocation,
-                      MlsLocation, ReceiptRecord, ReconciliationRecord, User)
+                      MlsLocation, ReceiptRecord, ReconciliationRecord, Setting, User)
 from ..models.constants import (MAX_BAG_WEIGHT_KG, STATUS_FLAGGED, STATUS_IN_TRANSIT, STATUS_MATCHED,
                                 STATUS_RECEIVED, STATUS_REGISTERED, utcnow)
 from . import audit
 from .ledger import (COMMITTED, FAILED, UNKNOWN, LedgerError, TxResult, chain_submit, commitment, fmt_weight,
                      get_ledger, new_request_id, new_salt, submit_tx, tx_status)
-from .settings import get_tolerance
+from .settings import TOLERANCE_KEY, get_tolerance
 
 BAG_ID_RE = re.compile(r"^BAG-\d{4,}$")
 FLAG_MESSAGE = ("Discrepancy flagged: this requires further verification. "
@@ -310,29 +310,29 @@ def _finish(op_id, res, bag_pk):
 
 
 # ------------------------------------------------------------------- register
-def next_bag_id() -> str:
+def next_bag_id(locked=False) -> str:
     n = 0
-    for (bid,) in db.session.query(Bag.bag_id).all():
+    query = db.session.query(Bag.bag_id)
+    if locked:
+        query = query.with_for_update()
+    for (bid,) in query.all():
         m = re.match(r"^BAG-(\d+)$", bid)
         if m:
             n = max(n, int(m.group(1)))
     return f"BAG-{n + 1:04d}"
 
 
-def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignment_code=None):
-    """Returns the bag. `bag.register_tx_id` is None while the registration awaits confirmation."""
-    if not admin.is_admin:
-        raise WorkflowError("Only an administrator can register bags", 403, "FORBIDDEN")
-    mls, fps = db.session.get(MlsLocation, mls_id), db.session.get(FpsLocation, fps_id)
-    if not mls or not mls.is_active or not fps or not fps.is_active:
-        raise WorkflowError("Choose an active MLS and an active destination FPS", 400, "INVALID_LOCATION")
-    commodity = (commodity or "Rice").strip()
-    if not commodity or len(commodity) > 50:
-        raise WorkflowError("Commodity must be 1-50 characters", 400, "INVALID_INPUT")
-    bag_id = normalize_bag_id(bag_id) if bag_id else next_bag_id()
+def _lock_bag_id_allocator():
+    """Serialize automatic bag-id allocation across concurrent database requests."""
+    row = Setting.query.filter_by(key=TOLERANCE_KEY).with_for_update().one_or_none()
+    if row is None:
+        raise WorkflowError("Application settings are not initialized", 500, "SETTINGS_NOT_INITIALIZED")
+
+
+def _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code):
+    """Persist one registration intent without contacting Fabric."""
     if Bag.query.filter_by(bag_id=bag_id).first():
         raise WorkflowError(f"{bag_id} is already registered", 409, "DUPLICATE_BAG")
-    _need_identity(admin)
 
     code = (consignment_code or f"CONS-{utcnow():%Y%m%d}-{mls.code}-{fps.code}").strip().upper()
     if not re.match(r"^[A-Z0-9-]{3,40}$", code):
@@ -355,13 +355,78 @@ def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignme
         raise WorkflowError(f"{bag_id} is already registered", 409, "DUPLICATE_BAG")
     rid = new_request_id()
     op = _begin_op(admin, bag.id, "RegisterBag", rid)
+    return bag, op, [bag_id, commodity, mls.code, fps.code, cons.code, rid]
+
+
+def _validate_register_request(admin, mls_id, fps_id, commodity, consignment_code):
+    if not admin.is_admin:
+        raise WorkflowError("Only an administrator can register bags", 403, "FORBIDDEN")
+    mls, fps = db.session.get(MlsLocation, mls_id), db.session.get(FpsLocation, fps_id)
+    if not mls or not mls.is_active or not fps or not fps.is_active:
+        raise WorkflowError("Choose an active MLS and an active destination FPS", 400, "INVALID_LOCATION")
+    commodity = (commodity or "Rice").strip()
+    if not commodity or len(commodity) > 50:
+        raise WorkflowError("Commodity must be 1-50 characters", 400, "INVALID_INPUT")
+    _need_identity(admin)
+    return mls, fps, commodity, consignment_code
+
+
+def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignment_code=None):
+    """Returns the bag. `bag.register_tx_id` is None while the registration awaits confirmation."""
+    mls, fps, commodity, consignment_code = _validate_register_request(
+        admin, mls_id, fps_id, commodity, consignment_code)
+    if bag_id:
+        bag_id = normalize_bag_id(bag_id)
+    else:
+        _lock_bag_id_allocator()
+        bag_id = next_bag_id(locked=True)
+
+    bag, op, args = _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code)
     op_id, bag_pk, identity = op.id, bag.id, admin.fabric_identity
-    args = [bag_id, commodity, mls.code, fps.code, cons.code, rid]
     db.session.commit()                                    # write-ahead: the intent is durable before Fabric is called
 
     res = submit_tx(identity, "RegisterBag", args)
     _finish(op_id, res, bag_pk)
     return db.session.get(Bag, bag_pk)
+
+
+def register_bags(admin, mls_id, fps_id, count, commodity="Rice", consignment_code=None):
+    """Register independent bags concurrently without bypassing write-ahead recovery."""
+    if count < 1:
+        raise WorkflowError("count must be at least 1", 400, "INVALID_COUNT")
+    mls, fps, commodity, consignment_code = _validate_register_request(
+        admin, mls_id, fps_id, commodity, consignment_code)
+    _lock_bag_id_allocator()
+    prepared = []
+    for _ in range(count):
+        prepared.append(_prepare_register(admin, mls, fps, next_bag_id(locked=True), commodity, consignment_code))
+    db.session.commit()
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    identity = admin.fabric_identity
+    app = current_app._get_current_object()
+
+    def submit_register(args):
+        with app.app_context():
+            return submit_tx(identity, "RegisterBag", args)
+
+    with ThreadPoolExecutor(max_workers=min(count, 8)) as executor:
+        futures = [executor.submit(submit_register, args)
+                   for _, _, args in prepared]
+        results = [future.result() for future in futures]
+
+    first_error = None
+    pending = False
+    for (bag, op, _), result in zip(prepared, results):
+        status = _settle(op.id, result, bag.id)
+        if status == "FAILED" and first_error is None:
+            first_error = LedgerError(result.error or "Blockchain request failed", result.status, FAILED)
+        pending = pending or status == PENDING
+    if first_error:
+        raise first_error
+    return ([db.session.get(Bag, bag.id) for bag, _, _ in prepared],
+            OUTCOME_PENDING if pending else OUTCOME_CONFIRMED)
 
 
 # ------------------------------------------------------------------- dispatch

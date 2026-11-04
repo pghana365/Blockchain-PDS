@@ -1,6 +1,6 @@
 # Code review: Blockchain-Based PDS Weight Verification
 
-**Date:** 2026-11-04 · **Reviewed:** git `HEAD` (beb8a37, including the two later commits that hid discrepancy reports and transaction history from operators) plus uncommitted block-size changes
+**Date:** 2026-11-04 · **Reviewed:** git `HEAD` (beb8a37, including the two later commits that hid discrepancy reports and transaction history from operators) plus the subsequent bulk-registration optimization
 **Method:** read the code; ran 52 backend + 13 chaincode tests (all pass); ran a live probe against the running stack (Flask, gateway, MySQL, Fabric 2.5.16); decoded the blocks directly from the peer.
 **Evidence tags:** **[live]** reproduced on the running system · **[code]** evident from the source, not reproduced · **[not tested]**
 
@@ -68,7 +68,7 @@ Password change / forced first-login change · pagination (lists silently capped
 | # | Issue | Severity | Tag |
 |---|---|---|---|
 | B1 | **Ambiguous commit timeout.** The gateway waits 60 s for commit status; on a timeout the backend treats the call as failed and rolls MySQL back, although the transaction may still commit. MySQL would then say REGISTERED while the ledger says IN_TRANSIT, and every retry fails with `INVALID_STATE` | High | code |
-| B2 | Latency after the 50-per-block change: block timeout 5 s ⇒ dispatch **5.1 s**, receipt **10.2 s** (two transactions), registering 3 bags **15.3 s** (sequential). Registering 50 bags would take about 4 minutes in one HTTP request | High for demo | live |
+| B2 | Latency after the 50-per-block change: block timeout 5 s ⇒ dispatch **5.1 s**, receipt **10.2 s** (two transactions), registering 3 bags **15.3 s** (sequential). The bulk endpoint now submits independent registrations concurrently while preserving per-transaction confirmation and recovery; live measurement of 5 bags was **5.287 s** versus **5.096 s** for one bag. | Reduced for bulk registration; single writes remain block-timeout bound | live/code |
 | B3 | No single call is atomic between MySQL and Fabric; the process relies on rollback + retry (good for failures *before* submit, see B1 for after) | Medium | code |
 | B4 | No tool to compare *every* MySQL bag with the ledger or to import chain state into MySQL | Medium | code |
 | B5 | Single peer per org, single orderer node, test-network credentials: fine for a demo, not "consortium" | Info | live |
@@ -120,7 +120,7 @@ All **[code]** unless noted; **no camera test was possible here.**
 | 1 | **Serialise the audit chain** (lock a one-row "chain head" or use `GET_LOCK` inside `audit.log`) + a thread test | ~20 lines | bug 1 |
 | 2 | **Make receipt + reconciliation one DB commit** (insert the reconciliation row before committing the receipt; only the Fabric write of the result stays afterwards) + "recompute" fallback in the retry button | ~30 lines | bug 2 |
 | 3 | **Handle ambiguous Fabric outcomes**: gateway reports "commit status unknown" distinctly; backend then reads the bag's on-chain state before deciding to roll back or finish the DB update | ~40 lines | B1 |
-| 4 | **Decide the block-timeout trade-off and add a concurrent bulk path.** `MaxMessageCount 50` stays; lower `BatchTimeout` to 1–2 s (dispatch ≈2 s, receipt ≈4 s) and make multi-bag registration submit in parallel so 50 registrations really fall into one block (this is the demonstration of "50 per block") | ~30 lines + config | B2 |
+| 4 | **Keep the block-timeout trade-off and use the concurrent bulk path.** `MaxMessageCount 50` stays; single writes remain timeout-bound, while multi-bag registration submits in parallel without weakening confirmation or recovery. | implemented | B2 |
 | 5 | **Login hardening**: same message for locked/unknown accounts, per-IP throttle, forced password change on first login (seed users flagged) | ~60 lines | S1–S3 |
 | 6 | **Phone demo setup**: bind `0.0.0.0` (firewall to LAN), set `PUBLIC_BASE_URL=http://<LAN-IP>:5000`, print labels *after* that, use the phone's native camera to open the link (HTTPS only if you want in-page scanning) | config only | mobile 1–3 |
 | 7 | Fix MLS counters (compute from unfiltered counts) and refresh README test count | ~5 lines | bug 3, 5 |

@@ -46,6 +46,9 @@ The project source stays on `C:` and is reachable from Ubuntu as `~/pds`.
   A block is cut when 50 transactions are waiting **or** after `BatchTimeout` (5 s) - so when users submit one at a time, a block holds fewer than 50 and
   each action waits up to 5 s to commit. `node fabric-gateway/src/batch-test.js 50` submits 50 at once and shows them landing in a single block.
   Override with `BATCH_COUNT` / `BATCH_TIMEOUT` env vars when running `network-up.sh`.
+  The admin bulk-registration endpoint preserves the write-ahead saga but submits independent `RegisterBag` proposals concurrently,
+  bounded to eight workers, then settles every result before responding. Fabric confirmation is still required for each bag;
+  unknown outcomes remain pending and use the existing recovery path.
 * **State machine:** `REGISTERED -> IN_TRANSIT -> RECEIVED -> MATCHED | FLAGGED`. Any out-of-order call is rejected, which also rejects duplicate dispatch/receipt.
 * **Duplicate / replay protection:** every write carries a unique `requestId`, stored on the ledger; reuse is rejected.
 * **Tamper evidence:** history is the Fabric blockchain itself (hash-linked blocks, endorsed by both orgs). `GetTransactionHistory` returns every state of a bag with its transaction ID. Nobody - including the admin - can edit past blocks; corrections are separate `RecordCorrection` events.

@@ -346,3 +346,53 @@ def test_mls_counters_do_not_depend_on_the_list_filter(app, clients):
     assert _counters(html2) == {"Awaiting dispatch": 1, "In transit": 0, "Flagged": 0}
     assert other in clients["mls2"].get("/dashboard").get_data(as_text=True)
     assert ids[0] not in clients["mls2"].get("/dashboard").get_data(as_text=True)
+
+
+def test_bulk_registration_submits_all_bags_and_keeps_unique_ids(app, clients, ledger):
+    admin = clients["admin"]
+    mls = MlsLocation.query.filter_by(code="MLS-01").one()
+    fps = FpsLocation.query.filter_by(code="FPS-01").one()
+    response = admin.post("/api/admin/bags", json={"mls_id": mls.id, "fps_id": fps.id, "count": 4})
+
+    assert response.status_code == 201
+    created = response.get_json()["created"]
+    assert len({item["bag_id"] for item in created}) == 4
+    assert all(item["tx_id"] and not item["pending"] for item in created)
+    assert count_calls(ledger, "RegisterBag") == 4
+    assert all(Bag.query.filter_by(bag_id=item["bag_id"]).one().register_tx_id for item in created)
+
+
+def test_bulk_registration_preserves_pending_recovery(app, clients, ledger):
+    admin = clients["admin"]
+    mls = MlsLocation.query.filter_by(code="MLS-01").one()
+    fps = FpsLocation.query.filter_by(code="FPS-01").one()
+    ledger.mode["RegisterBag"] = "unknown_pending"
+    response = admin.post("/api/admin/bags", json={"mls_id": mls.id, "fps_id": fps.id, "count": 3})
+
+    assert response.status_code == 202
+    created = response.get_json()["created"]
+    assert all(item["pending"] and item["tx_id"] is None for item in created)
+    assert BlockchainTransaction.query.filter_by(function="RegisterBag", status="PENDING").count() == 3
+    assert all(op.tx_id for op in BlockchainTransaction.query.filter_by(function="RegisterBag").all())
+
+    ledger.commit_pending()
+    ledger.mode.clear()
+    for item in created:
+        assert admin.post(f"/api/admin/bags/{item['bag_id']}/resolve-pending", json={}).status_code == 200
+    assert BlockchainTransaction.query.filter_by(function="RegisterBag", status="PENDING").count() == 0
+    assert count_calls(ledger, "RegisterBag") == 3
+
+
+def test_duplicate_bag_id_is_rejected_after_bulk_registration(app, clients):
+    admin = clients["admin"]
+    mls = MlsLocation.query.filter_by(code="MLS-01").one()
+    fps = FpsLocation.query.filter_by(code="FPS-01").one()
+    created = admin.post("/api/admin/bags", json={
+        "mls_id": mls.id, "fps_id": fps.id, "bag_id": "BAG-9001",
+    })
+    assert created.status_code == 201
+    duplicate = admin.post("/api/admin/bags", json={
+        "mls_id": mls.id, "fps_id": fps.id, "bag_id": "BAG-9001",
+    })
+    assert duplicate.status_code == 409
+    assert duplicate.get_json()["code"] == "DUPLICATE_BAG"

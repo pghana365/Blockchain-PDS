@@ -190,13 +190,20 @@ def register_bags():
         raise v.ValidationError("count must be between 1 and 50")
     if count > 1 and d.get("bag_id"):
         raise v.ValidationError("Leave Bag ID empty when registering several bags")
+    if count > 1:
+        bags, outcome = workflow.register_bags(
+            current_user, mls_id, fps_id, count, d.get("commodity") or "Rice",
+            d.get("consignment_id") or None)
+        return jsonify(
+            created=[{"bag_id": bag.bag_id, "tx_id": bag.register_tx_id,
+                      "pending": bag.register_tx_id is None} for bag in bags],
+            outcome=outcome), (202 if outcome == workflow.OUTCOME_PENDING else 201)
     created = []
-    for _ in range(count):
-        bag = workflow.register_bag(current_user, mls_id, fps_id, d.get("bag_id") or None,
-                                    d.get("commodity") or "Rice", d.get("consignment_id") or None)
-        created.append({"bag_id": bag.bag_id, "tx_id": bag.register_tx_id, "pending": bag.register_tx_id is None})
-    pending = any(c["pending"] for c in created)
-    return jsonify(created=created, outcome="PENDING_CONFIRMATION" if pending else "CONFIRMED"), (202 if pending else 201)
+    bag = workflow.register_bag(current_user, mls_id, fps_id, d.get("bag_id") or None,
+                                d.get("commodity") or "Rice", d.get("consignment_id") or None)
+    created.append({"bag_id": bag.bag_id, "tx_id": bag.register_tx_id, "pending": bag.register_tx_id is None})
+    return jsonify(created=created, outcome="PENDING_CONFIRMATION" if created[0]["pending"] else "CONFIRMED"), (
+        202 if created[0]["pending"] else 201)
 
 
 @bp.put("/settings/tolerance")
