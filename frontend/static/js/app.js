@@ -59,7 +59,7 @@
         try {
           const data = await api(form.dataset.method || 'POST', form.dataset.api, body);
           if (form.hasAttribute('data-reload')) {
-            flash('success', esc(data.message || 'Saved.') + (data.created ? ' Created: <strong>' + data.created.map((c) => esc(c.bag_id)).join(', ') + '</strong>' : ''));
+            flash('success', esc(data.message || 'Saved.') + (data.created ? ' Created: <strong>' + data.created.map((c) => esc(c.bag_id) + (c.pending ? ' (awaiting blockchain confirmation)' : '')).join(', ') + '</strong>' : ''));
             location.reload();
             return;
           }

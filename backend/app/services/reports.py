@@ -14,8 +14,10 @@ def admin_stats():
         .where(User.is_enabled.is_(True)).group_by(Role.name)).all())
     return {
         "total_bags": count(db.select(func.count(Bag.id))),
-        "dispatched": count(db.select(func.count(DispatchRecord.id))),
-        "received": count(db.select(func.count(ReceiptRecord.id))),
+        "dispatched": count(db.select(func.count(DispatchRecord.id)).where(DispatchRecord.tx_id.isnot(None))),
+        "received": count(db.select(func.count(ReceiptRecord.id)).where(ReceiptRecord.tx_id.isnot(None))),
+        "pending_confirmations": count(db.select(func.count(BlockchainTransaction.id))
+                                       .where(BlockchainTransaction.status == "PENDING")),
         "matched": count(db.select(func.count(ReconciliationRecord.id)).where(ReconciliationRecord.status == STATUS_MATCHED)),
         "flagged": count(db.select(func.count(ReconciliationRecord.id)).where(ReconciliationRecord.status == STATUS_FLAGGED)),
         "pending_deliveries": count(db.select(func.count(Bag.id)).where(Bag.status == STATUS_IN_TRANSIT)),
@@ -23,6 +25,16 @@ def admin_stats():
         "fps_operators": operators.get(ROLE_FPS, 0),
         "chain_sync_pending": count(db.select(func.count(ReconciliationRecord.id)).where(ReconciliationRecord.chain_status != "CONFIRMED")),
     }
+
+
+def mls_counts(user):
+    """Bags per status at the operator's MLS - always over ALL of the location's bags, never the
+    filtered list, so the header counters do not change when the table is filtered."""
+    rows = (db.session.query(Bag.status, func.count(Bag.id))
+            .filter(Bag.mls_id == user.mls_location_id).group_by(Bag.status).all())
+    counts = {s: 0 for s in ("REGISTERED", "IN_TRANSIT", "RECEIVED", "MATCHED", "FLAGGED")}
+    counts.update(dict(rows))
+    return counts
 
 
 def mls_rows(user, status=None):

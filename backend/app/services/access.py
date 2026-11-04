@@ -12,8 +12,8 @@ from ..extensions import db
 from ..models import Bag, DispatchRecord, ReceiptRecord, ReconciliationRecord
 
 
-def _exists(model, bag_pk: int) -> bool:
-    return db.session.query(model.id).filter(model.bag_pk == bag_pk).first() is not None
+def _exists(model, bag_pk: int, *extra) -> bool:
+    return db.session.query(model.id).filter(model.bag_pk == bag_pk, *extra).first() is not None
 
 
 def has_dispatch(bag) -> bool:
@@ -21,7 +21,16 @@ def has_dispatch(bag) -> bool:
 
 
 def has_receipt(bag) -> bool:
+    """A receipt row exists (it may still be waiting for blockchain confirmation)."""
     return _exists(ReceiptRecord, bag.id)
+
+
+def has_confirmed_receipt(bag) -> bool:
+    """The receipt is confirmed on the ledger (tx_id is only filled in after confirmation).
+
+    The blind rule uses THIS, not has_receipt: if a pending receipt later failed and was undone,
+    the FPS must not already have seen the MLS weight."""
+    return _exists(ReceiptRecord, bag.id, ReceiptRecord.tx_id.isnot(None))
 
 
 def can_view_bag(user, bag) -> bool:
@@ -38,7 +47,7 @@ def can_view_dispatch_weight(user, bag) -> bool:
     if not can_view_bag(user, bag):
         return False
     if user.is_fps:
-        return has_receipt(bag)  # blind rule: only after this FPS submitted its own receipt
+        return has_confirmed_receipt(bag)  # blind rule: only after this FPS's own receipt is confirmed
     return True
 
 
@@ -50,7 +59,7 @@ def can_view_reconciliation(user, bag) -> bool:
     if not can_view_bag(user, bag):
         return False
     if user.is_fps:
-        return has_receipt(bag)
+        return has_confirmed_receipt(bag)
     return True
 
 

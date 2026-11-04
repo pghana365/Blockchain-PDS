@@ -74,4 +74,4 @@ def register_cli(app):
                 click.echo(f"{bid} exists - skipped")
                 continue
             bag = workflow.register_bag(admin, mls.id, fps.id, bid, "Rice", "CONS-DEMO-001")
-            click.echo(f"registered {bag.bag_id} tx {bag.register_tx_id[:16]}...")
+            click.echo(f"registered {bag.bag_id} tx {(bag.register_tx_id or 'PENDING')[:16]}...")

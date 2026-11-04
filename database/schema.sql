@@ -4,6 +4,13 @@
 
 SET NAMES utf8mb4;
 
+CREATE TABLE audit_chain_head (
+	id INTEGER NOT NULL AUTO_INCREMENT,
+	last_hash VARCHAR(64) NOT NULL,
+	updated_at DATETIME NOT NULL,
+	PRIMARY KEY (id)
+);
+
 CREATE TABLE fps_locations (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	code VARCHAR(16) NOT NULL, 
@@ -219,4 +226,3 @@ CREATE TABLE reconciliation_records (
 	FOREIGN KEY(bag_pk) REFERENCES bags (id)
 );
 CREATE INDEX ix_reconciliation_records_status ON reconciliation_records (status);
-

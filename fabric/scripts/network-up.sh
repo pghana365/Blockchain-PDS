@@ -5,6 +5,8 @@ set -euo pipefail
 TN="$HOME/fabric/fabric-samples/test-network"
 CHANNEL="${CHANNEL:-pdschannel}"
 
+bash "$(dirname "${BASH_SOURCE[0]}")/configure-batch.sh"   # 50 transactions per block
+
 cd "$TN"
 ./network.sh down || true
 ./network.sh up createChannel -c "$CHANNEL" -ca

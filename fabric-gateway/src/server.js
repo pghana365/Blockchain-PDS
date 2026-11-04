@@ -41,11 +41,26 @@ function handler(kind) {
                 : await fabric.evaluate(identity, fn, args);
             res.json(out);
         } catch (err) {
-            const status = err.status || (/ACCESS_DENIED/.test(fabric.describeError(err)) ? 403 : 422);
-            res.status(status).json({ error: fabric.describeError(err) });
+            const outcome = err.outcome || 'FAILED';
+            // 504 = "we do not know whether it committed": the caller must ask the ledger, never assume failure
+            const status = outcome === 'UNKNOWN' ? 504
+                : (err.status || (/ACCESS_DENIED/.test(fabric.describeError(err)) ? 403 : 422));
+            res.status(status).json({ error: fabric.describeError(err), outcome, txId: err.txId || null });
         }
     };
 }
+
+app.post('/tx-status', async (req, res) => {
+    const { identity, txId } = req.body || {};
+    if (typeof identity !== 'string' || typeof txId !== 'string') {
+        return res.status(400).json({ error: 'body must be {identity, txId}' });
+    }
+    try {
+        res.json(await fabric.txStatus(identity, txId));
+    } catch (err) {
+        res.status(err.status || 502).json({ error: fabric.describeError(err) });
+    }
+});
 
 app.get('/identity/:name', (req, res) => {
     const info = fabric.identityInfo(req.params.name);

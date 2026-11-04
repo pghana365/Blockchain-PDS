@@ -12,6 +12,20 @@
 <div class="row g-3">
   <div class="col-lg-8">
 
+    {% if bag.pending %}
+    <div class="alert alert-warning" role="status">
+      <strong>Waiting for blockchain confirmation.</strong>
+      {% for p in bag.pending %}{{ p.operation }} (sent {{ p.since|dt }}){% if not loop.last %}, {% endif %}{% endfor %}
+      was saved but the ledger has not confirmed it yet. It will complete automatically - reload this page in a moment. Please do not submit it again.
+      {% if current_user.is_admin %}
+      <div class="mt-2">
+        <button id="resolve-btn" type="button" class="btn btn-sm btn-dark">Check ledger now</button>
+        <button id="abandon-btn" type="button" class="btn btn-sm btn-outline-danger">Abandon (only if the ledger does not have it)</button>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# ---------------- action panels ---------------- #}
     {% if bag.can_dispatch %}
     <div class="card mb-3 border-primary">

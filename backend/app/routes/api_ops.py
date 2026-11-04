@@ -29,6 +29,8 @@ def _bag_or_404(bag_id):
 @login_required
 @api_guard
 def get_bag(bag_id):
+    bag = _bag_or_404(bag_id)
+    workflow.heal_bag(bag)          # settle old pending operations / missing reconciliation, if the ledger can answer
     return jsonify(bag_view(current_user, _bag_or_404(bag_id)))
 
 
@@ -36,19 +38,24 @@ def get_bag(bag_id):
 @roles_required(ROLE_MLS)
 @api_guard
 def dispatch(bag_id):
-    bag, _ = workflow.dispatch_bag(current_user, bag_id, json_body().get("weight_kg"))
+    bag, rec, outcome = workflow.dispatch_bag(current_user, bag_id, json_body().get("weight_kg"))
     view = bag_view(current_user, bag)
-    return jsonify(message="Bag dispatched and recorded on the blockchain.",
-                   tx_id=view["dispatch"]["tx_id"], bag=view), 201
+    if outcome == workflow.OUTCOME_PENDING:     # saved, but NOT confirmed on the ledger yet: never say "success"
+        return jsonify(outcome=outcome, message=workflow.PENDING_MESSAGE, tx_id=rec.tx_id, bag=view), 202
+    return jsonify(outcome=outcome, message="Bag dispatched and recorded on the blockchain.",
+                   tx_id=rec.tx_id, bag=view), 201
 
 
 @bp.post("/bags/<bag_id>/receive")
 @roles_required(ROLE_FPS)
 @api_guard
 def receive(bag_id):
-    bag = workflow.receive_bag(current_user, bag_id, json_body().get("weight_kg"))
-    view = bag_view(current_user, bag)   # now permitted: the receipt exists
-    return jsonify(message="Receipt recorded and reconciled.", tx_id=view["receipt"]["tx_id"], bag=view), 201
+    bag, outcome = workflow.receive_bag(current_user, bag_id, json_body().get("weight_kg"))
+    view = bag_view(current_user, bag)   # dispatch weight/comparison appear only once the receipt is CONFIRMED
+    if outcome == workflow.OUTCOME_PENDING:
+        return jsonify(outcome=outcome, message=workflow.PENDING_MESSAGE, tx_id=None, bag=view), 202
+    return jsonify(outcome=outcome, message="Receipt recorded and reconciled.",
+                   tx_id=view["receipt"]["tx_id"], bag=view), 201
 
 
 @bp.get("/bags/<bag_id>/qr.png")

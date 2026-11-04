@@ -42,6 +42,19 @@ class AuditLog(db.Model):
     user = db.relationship("User")
 
 
+class AuditChainHead(db.Model):
+    """Single row (id=1) holding the hash of the newest audit entry.
+
+    Every audit writer locks this row (SELECT ... FOR UPDATE) before reading the previous
+    hash, so concurrent requests are serialised until their transaction commits and the
+    chain can never fork. The audit entries themselves are unchanged."""
+    __tablename__ = "audit_chain_head"
+
+    id = db.Column(db.Integer, primary_key=True)
+    last_hash = db.Column(db.String(64), nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 

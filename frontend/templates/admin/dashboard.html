@@ -16,6 +16,9 @@
   {{ stat('MLS operators', stats.mls_operators) }}
   {{ stat('FPS operators', stats.fps_operators) }}
 </div>
+{% if stats.pending_confirmations %}
+<div class="alert alert-warning">{{ stats.pending_confirmations }} blockchain operation(s) are waiting for ledger confirmation. They complete automatically; open the affected bag to check them.</div>
+{% endif %}
 {% if stats.chain_sync_pending %}
 <div class="alert alert-warning">{{ stats.chain_sync_pending }} reconciliation record(s) are not yet confirmed on the blockchain. Open the bag and use <em>Retry sync</em>.</div>
 {% endif %}

@@ -60,10 +60,13 @@ docs/               architecture.md, setup-guide.md
 
 | Suite | Command | Result at last run |
 |---|---|---|
-| Backend (12 required scenarios + security + page rendering) | `cd backend ; .venv\Scripts\python -m pytest -q` | 48 passed |
-| Chaincode | `cd fabric\chaincode\pds-contract ; npm test` | 13 passed |
-| Live Fabric via Gateway SDK | `cd fabric-gateway ; node src\smoke-test.js` | passed |
-| Full scenario on the running stack | `backend\.venv\Scripts\python scripts\e2e_demo.py` | 23/23 checks |
+| Backend: 12 required scenarios, security, page rendering, reliability/recovery, dashboard counters | `cd backend ; .venv\Scripts\python -m pytest -q` | **82 passed** (80 use SQLite + an in-memory *fake* ledger; 2 audit-concurrency tests need the docker MySQL and are skipped if it is not running) |
+| Chaincode | `cd fabric\chaincode\pds-contract ; npm test` | **13 passed** (fake ledger stub, not a network) |
+| Live Fabric via Gateway SDK | `cd fabric-gateway ; node src\smoke-test.js` | needs the running network; last run before the latest changes |
+| Full scenario on the running stack (real Fabric) | `backend\.venv\Scripts\python scripts\e2e_demo.py --bag BAG-9001` | 23/23 checks (run on the latest code) |
+
+There is **no automated real-Fabric test inside `pytest`**. Real-network behaviour (including a transaction whose commit status is
+unknown) was verified by running scripts against the live network; see `docs/architecture.md` section 5b.
 
 The complete live demonstration was verified locally on the running stack:
 

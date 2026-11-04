@@ -11,7 +11,8 @@ Hyperledger Fabric. The Flask backend calls it; browsers never do.
 |---|---|
 | `GET /health` | liveness (no key needed) |
 | `GET /identity/:name` | does this wallet identity exist, with its MSP/role/location (never returns keys) |
-| `POST /submit` `{identity, function, args[]}` | endorse + submit + wait for commit -> `{txId, blockNumber, result}` |
+| `POST /submit` `{identity, function, args[]}` | endorse + submit + wait for commit -> `{txId, blockNumber, result}`. Errors carry `outcome`: **`FAILED`** (certainly not on the ledger) or **`UNKNOWN`** (HTTP 504, plus `txId`: it may still commit - ask `/tx-status`, do not assume failure) |
+| `POST /tx-status` `{identity, txId}` | asks the peer (`qscc`) about a transaction -> `{state: VALID \| INVALID \| NOT_FOUND, blockNumber?, code?}` |
 | `POST /evaluate` `{identity, function, args[]}` | read-only query |
 
 ```powershell

@@ -8,9 +8,9 @@
   <div><div class="text-muted small text-uppercase">Your location</div>
     <div class="fs-5 fw-semibold">{{ mls.code }} - {{ mls.name }}</div><div class="text-muted">{{ mls.district }}</div></div>
   <div class="d-flex gap-4">
-    <div><div class="text-muted small">Awaiting dispatch</div><div class="fs-4 fw-bold">{{ rows|selectattr('0.status', 'equalto', 'REGISTERED')|list|length }}</div></div>
-    <div><div class="text-muted small">In transit</div><div class="fs-4 fw-bold">{{ rows|selectattr('0.status', 'equalto', 'IN_TRANSIT')|list|length }}</div></div>
-    <div><div class="text-muted small">Flagged</div><div class="fs-4 fw-bold text-danger">{{ rows|selectattr('0.status', 'equalto', 'FLAGGED')|list|length }}</div></div>
+    <div><div class="text-muted small">Awaiting dispatch</div><div class="fs-4 fw-bold">{{ counts.REGISTERED }}</div></div>
+    <div><div class="text-muted small">In transit</div><div class="fs-4 fw-bold">{{ counts.IN_TRANSIT }}</div></div>
+    <div><div class="text-muted small">Flagged</div><div class="fs-4 fw-bold text-danger">{{ counts.FLAGGED }}</div></div>
   </div>
 </div></div>
 

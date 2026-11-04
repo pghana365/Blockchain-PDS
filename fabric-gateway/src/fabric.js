@@ -6,6 +6,11 @@ const crypto = require('node:crypto');
 const grpc = require('@grpc/grpc-js');
 const { connect, signers } = require('@hyperledger/fabric-gateway');
 
+const { common, peer } = require('@hyperledger/fabric-protos');
+
+// How long to wait for a transaction to be reported as committed. Default 60 s. Lowering it
+// (COMMIT_STATUS_TIMEOUT_MS) is only for testing the "outcome unknown" path against a real network.
+const COMMIT_STATUS_TIMEOUT_MS = Number(process.env.COMMIT_STATUS_TIMEOUT_MS || 60_000);
 const CHANNEL = process.env.FABRIC_CHANNEL || 'pdschannel';
 const CHAINCODE = process.env.FABRIC_CHAINCODE || 'pds';
 const WALLET = path.resolve(process.env.WALLET_DIR || path.join(__dirname, '..', 'wallet'));
@@ -54,7 +59,7 @@ function grpcClient(mspId) {
     return client;
 }
 
-function withGateway(identityName, fn) {
+function withNetwork(identityName, fn) {
     const id = loadIdentity(identityName);
     const gateway = connect({
         client: grpcClient(id.mspId),
@@ -63,10 +68,13 @@ function withGateway(identityName, fn) {
         evaluateOptions: () => ({ deadline: Date.now() + 10_000 }),
         endorseOptions: () => ({ deadline: Date.now() + 20_000 }),
         submitOptions: () => ({ deadline: Date.now() + 20_000 }),
-        commitStatusOptions: () => ({ deadline: Date.now() + 60_000 }),
+        commitStatusOptions: () => ({ deadline: Date.now() + COMMIT_STATUS_TIMEOUT_MS }),
     });
-    const contract = gateway.getNetwork(CHANNEL).getContract(CHAINCODE);
-    return Promise.resolve(fn(contract)).finally(() => gateway.close());
+    return Promise.resolve(fn(gateway.getNetwork(CHANNEL))).finally(() => gateway.close());
+}
+
+function withGateway(identityName, fn) {
+    return withNetwork(identityName, (network) => fn(network.getContract(CHAINCODE)));
 }
 
 /** Non-secret metadata about a wallet identity (never returns key material). */
@@ -93,19 +101,81 @@ function describeError(err) {
     return (err && err.message) || String(err);
 }
 
+/**
+ * Every failure carries an `outcome`:
+ *   FAILED  - the transaction is certainly NOT on the ledger (rejected at endorsement, or
+ *             committed as INVALID). Safe to undo local work and retry.
+ *   UNKNOWN - it was (or may have been) sent to the orderer but we never saw its commit
+ *             status (timeout / network error). It may still commit. NOTHING may be undone
+ *             or re-sent until the ledger has been asked (txStatus / chain state).
+ */
+function outcomeError(outcome, txId, message, status) {
+    const e = new Error(message);
+    e.outcome = outcome;
+    e.txId = txId;
+    if (status) e.status = status;
+    return e;
+}
+
 async function submit(identity, fn, args) {
     if (!SUBMIT_FUNCTIONS.has(fn)) throw httpError(400, `function '${fn}' is not allowed`);
     return withGateway(identity, async (contract) => {
         const proposal = contract.newProposal(fn, { arguments: args.map(String) });
         const txId = proposal.getTransactionId();
-        const transaction = await proposal.endorse();
+
+        let transaction;
+        try {
+            transaction = await proposal.endorse();                 // nothing is on the ledger yet
+        } catch (err) {
+            throw outcomeError('FAILED', txId, describeError(err));
+        }
         const result = Buffer.from(transaction.getResult()).toString('utf8');
-        const commit = await transaction.submit();
-        const status = await commit.getStatus();
-        if (!status.successful) {
-            throw httpError(409, `transaction ${txId} failed to commit with code ${status.code}`);
+
+        let commit;
+        try {
+            commit = await transaction.submit();                    // handed to the orderer
+        } catch (err) {
+            throw outcomeError('UNKNOWN', txId, `Submission to the orderer did not complete: ${describeError(err)}`);
+        }
+
+        let status;
+        try {
+            status = await commit.getStatus();                      // wait for the block that contains it
+        } catch (err) {
+            throw outcomeError('UNKNOWN', txId, `Commit status of transaction ${txId} could not be confirmed: ${describeError(err)}`);
+        }
+        if (!status.successful) {                                   // in a block, but marked invalid: definitive
+            throw outcomeError('FAILED', txId, `transaction ${txId} was rejected at commit (validation code ${status.code})`, 409);
         }
         return { txId, blockNumber: String(status.blockNumber), result: result ? JSON.parse(result) : null };
+    });
+}
+
+/**
+ * Ask the peer's ledger what happened to a transaction (qscc system chaincode).
+ *   VALID      committed successfully (blockNumber included)
+ *   INVALID    committed but invalidated (code included) - it did NOT change state
+ *   NOT_FOUND  not in any committed block (yet)
+ */
+async function txStatus(identity, txId) {
+    if (!/^[0-9a-f]{64}$/.test(txId || '')) throw httpError(400, 'invalid transaction id');
+    return withNetwork(identity, async (network) => {
+        const qscc = network.getContract('qscc');
+        let bytes;
+        try {
+            bytes = await qscc.evaluateTransaction('GetTransactionByID', CHANNEL, txId);
+        } catch (err) {
+            if (/not found|notfound|no such transaction/i.test(describeError(err))) return { state: 'NOT_FOUND' };
+            throw err;
+        }
+        const code = peer.ProcessedTransaction.deserializeBinary(bytes).getValidationcode();
+        const codeName = Object.keys(peer.TxValidationCode).find((k) => peer.TxValidationCode[k] === code);
+        let blockNumber = null;
+        try {
+            const blk = await qscc.evaluateTransaction('GetBlockByTxID', CHANNEL, txId);
+            blockNumber = String(common.Block.deserializeBinary(blk).getHeader().getNumber());
+        } catch (_) { /* block number is informational */ }
+        return { state: code === peer.TxValidationCode.VALID ? 'VALID' : 'INVALID', code: codeName, blockNumber };
     });
 }
 
@@ -118,4 +188,4 @@ async function evaluate(identity, fn, args) {
     });
 }
 
-module.exports = { submit, evaluate, identityInfo, describeError, httpError, CHANNEL, CHAINCODE, WALLET };
+module.exports = { submit, evaluate, txStatus, identityInfo, describeError, httpError, CHANNEL, CHAINCODE, WALLET };

@@ -26,7 +26,11 @@
         btn.disabled = true; btn.textContent = 'Submitting to blockchain…';
         try {
           const data = await api('POST', '/api/bags/' + encodeURIComponent(bagId) + '/' + kind, { weight_kg: weight });
-          flash('success', '<strong>' + esc(data.message) + '</strong><br>Blockchain transaction ID: <span class="mono">' + esc(data.tx_id) + '</span>');
+          if (data.outcome === 'PENDING_CONFIRMATION') {   // saved, but the ledger has not confirmed it: never show success
+            flash('warning', '<strong>Awaiting blockchain confirmation.</strong><br>' + esc(data.message));
+          } else {
+            flash('success', '<strong>' + esc(data.message) + '</strong><br>Blockchain transaction ID: <span class="mono">' + esc(data.tx_id) + '</span>');
+          }
           location.reload();
         } catch (e) {
           alertBox(out, 'danger', esc(e.message));
@@ -72,6 +76,19 @@
         } catch (e) { alertBox(out, 'danger', esc(e.message)); }
       });
     }
+    [['resolve-btn', false], ['abandon-btn', true]].forEach(([id, abandon]) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.addEventListener('click', async () => {
+        if (abandon && !window.confirm('Undo the unconfirmed operation? Only do this if the ledger does not have it (checked automatically).')) return;
+        try {
+          const d = await api('POST', '/api/admin/bags/' + encodeURIComponent(bagId) + '/resolve-pending', { abandon });
+          flash(d.still_pending.length ? 'warning' : 'success',
+            d.still_pending.length ? 'Still not confirmed by the ledger (' + d.still_pending.length + ' operation(s)).' : 'Resolved against the ledger.');
+          location.reload();
+        } catch (e) { window.alert(e.message); }
+      });
+    });
     const retry = document.getElementById('retry-sync');
     if (retry) {
       retry.addEventListener('click', async () => {

@@ -30,7 +30,7 @@ def dashboard():
                                tolerance=settings.get_tolerance())
     if u.is_mls:
         rows = reports.mls_rows(u, request.args.get("status") or None)
-        return render_template("mls/dashboard.html", rows=rows, statuses=BAG_STATUSES,
+        return render_template("mls/dashboard.html", rows=rows, counts=reports.mls_counts(u), statuses=BAG_STATUSES,
                                sel_status=request.args.get("status", ""))
     if u.is_fps:
         return render_template("fps/dashboard.html", incoming=reports.fps_incoming(u), receipts=reports.fps_receipts(u))
@@ -63,6 +63,7 @@ def bag_detail(bag_id):
         audit.log("BAG_VIEW_DENIED", current_user, "bag", bid, {"role": current_user.role_name}, commit=True)
         return render_template("error.html", code=404,
                                message="Bag not found, or it is not associated with your location."), 404
+    workflow.heal_bag(bag)   # finish/undo operations of unknown outcome once the ledger can answer
     audit.log("BAG_VIEWED", current_user, "bag", bid, commit=True)
     return render_template("bag_detail.html", bag=bag_view(current_user, bag), tolerance=settings.get_tolerance())
 

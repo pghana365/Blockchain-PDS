@@ -18,6 +18,7 @@ def iso(dt):
 def bag_view(user, bag, with_transactions=True):
     has_dispatch = access.has_dispatch(bag)
     has_receipt = access.has_receipt(bag)
+    pending_ops = BlockchainTransaction.query.filter_by(bag_pk=bag.id, status="PENDING").all()
     v = {
         "bag_id": bag.bag_id,
         "commodity": bag.commodity,
@@ -30,10 +31,12 @@ def bag_view(user, bag, with_transactions=True):
         # non-sensitive progress flags (safe for every authorised viewer)
         "dispatched": has_dispatch,
         "received": has_receipt,
-        "can_dispatch": bool(user.is_mls and bag.mls_id == user.mls_location_id
+        "can_dispatch": bool(user.is_mls and bag.mls_id == user.mls_location_id and not pending_ops
                              and bag.status == STATUS_REGISTERED and not has_dispatch),
-        "can_receive": bool(user.is_fps and bag.fps_id == user.fps_location_id
+        "can_receive": bool(user.is_fps and bag.fps_id == user.fps_location_id and not pending_ops
                             and bag.status == STATUS_IN_TRANSIT and not has_receipt),
+        # An earlier operation was sent to the blockchain but is not confirmed yet (no weights in here).
+        "pending": [{"operation": o.function, "since": iso(o.created_at)} for o in pending_ops],
     }
 
     d = access.visible_dispatch(user, bag)

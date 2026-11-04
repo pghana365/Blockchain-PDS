@@ -194,8 +194,9 @@ def register_bags():
     for _ in range(count):
         bag = workflow.register_bag(current_user, mls_id, fps_id, d.get("bag_id") or None,
                                     d.get("commodity") or "Rice", d.get("consignment_id") or None)
-        created.append({"bag_id": bag.bag_id, "tx_id": bag.register_tx_id})
-    return jsonify(created=created), 201
+        created.append({"bag_id": bag.bag_id, "tx_id": bag.register_tx_id, "pending": bag.register_tx_id is None})
+    pending = any(c["pending"] for c in created)
+    return jsonify(created=created, outcome="PENDING_CONFIRMATION" if pending else "CONFIRMED"), (202 if pending else 201)
 
 
 @bp.put("/settings/tolerance")
@@ -225,9 +226,36 @@ def correction(bag_id):
 @roles_required(ROLE_ADMIN)
 @api_guard
 def retry_sync(bag_id):
+    """Idempotent recovery. If the receipt is confirmed but its reconciliation row is missing it is
+    rebuilt from the original stored weights; the result is then written to (or found on) the ledger.
+    Calling it again never creates a second reconciliation or a second ledger transaction."""
     bag_id = workflow.normalize_bag_id(bag_id)
     bag = Bag.query.filter_by(bag_id=bag_id).one_or_none()
-    if not bag or not ReconciliationRecord.query.filter_by(bag_pk=bag.id).first():
-        raise workflow.WorkflowError("No reconciliation to sync for this bag", 404, "NOT_FOUND")
+    if not bag:
+        raise workflow.WorkflowError("Bag not found", 404, "NOT_FOUND")
+    if workflow.recover_bag(bag) is None:
+        raise workflow.WorkflowError(
+            "There is no confirmed receipt to reconcile for this bag (the receipt is missing or still "
+            "waiting for blockchain confirmation).", 409, "NOTHING_TO_RECONCILE")
     ok = workflow.sync_reconciliation_to_chain(current_user, bag_id)
-    return jsonify(synced=ok), (200 if ok else 502)
+    return jsonify(synced=ok, outcome="CONFIRMED" if ok else "PENDING_CONFIRMATION"), (200 if ok else 202)
+
+
+@bp.post("/bags/<bag_id>/resolve-pending")
+@roles_required(ROLE_ADMIN)
+@api_guard
+def resolve_pending(bag_id):
+    """Ask the ledger about operations of unknown outcome and finish or undo them.
+    `abandon: true` additionally undoes operations that the ledger positively does not have, but only
+    when they are older than PENDING_ABANDON_MINUTES (default 15)."""
+    bag_id = workflow.normalize_bag_id(bag_id)
+    bag = Bag.query.filter_by(bag_id=bag_id).one_or_none()
+    if not bag:
+        raise workflow.WorkflowError("Bag not found", 404, "NOT_FOUND")
+    abandon = bool(json_body().get("abandon"))
+    left = workflow.resolve_pending(bag, abandon=abandon)
+    if abandon:
+        audit.log("PENDING_ABANDON_REQUESTED", current_user, "bag", bag_id, {"still_pending": len(left)}, commit=True)
+    workflow.heal_bag(bag)
+    return jsonify(still_pending=[{"function": o.function, "tx_id": o.tx_id, "since": o.created_at.isoformat() + "Z"}
+                                  for o in left])

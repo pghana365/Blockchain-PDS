@@ -30,6 +30,10 @@ class Config:
     GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://127.0.0.1:3001")
     GATEWAY_API_KEY = os.environ.get("GATEWAY_API_KEY", "")
     GATEWAY_TIMEOUT = int(os.environ.get("GATEWAY_TIMEOUT", "90"))
+    # unknown-outcome handling: how often/long to ask the ledger about a transaction whose commit status was not seen
+    LEDGER_CONFIRM_POLLS = int(os.environ.get("LEDGER_CONFIRM_POLLS", "4"))
+    LEDGER_CONFIRM_INTERVAL = float(os.environ.get("LEDGER_CONFIRM_INTERVAL", "2.0"))
+    PENDING_ABANDON_MINUTES = int(os.environ.get("PENDING_ABANDON_MINUTES", "15"))  # earliest an admin may abandon an unconfirmed op
 
     # business
     DEFAULT_TOLERANCE_KG = os.environ.get("DEFAULT_TOLERANCE_KG", "0.2")
@@ -56,6 +60,9 @@ class TestConfig(Config):
     GATEWAY_API_KEY = "test-key-test-key-test"
     SEED_PASSWORD = "Test#Password2026"
     MAX_FAILED_LOGINS = 5
+    LEDGER_CONFIRM_POLLS = 3
+    LEDGER_CONFIRM_INTERVAL = 0      # no sleeping in unit tests
+    PENDING_ABANDON_MINUTES = 15
 
     @classmethod
     def validate(cls):

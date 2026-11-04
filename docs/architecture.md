@@ -42,6 +42,10 @@ The project source stays on `C:` and is reachable from Ubuntu as `~/pds`.
   * `DispatchBag` requires `pds.location` = the bag's origin MLS; `ReceiveBag` requires `pds.location` = the bag's destination FPS;
   * reads (`GetBagStatus`, `GetTransactionHistory`) are limited to the operator's own bags; admin/auditor read everything;
   * identities can be revoked on the ledger with `RevokeRole`.
+* **Block size:** the orderer is configured for **50 transactions per block** (`BatchSize.MaxMessageCount: 50`, set by `fabric/scripts/configure-batch.sh` before the channel is created).
+  A block is cut when 50 transactions are waiting **or** after `BatchTimeout` (5 s) - so when users submit one at a time, a block holds fewer than 50 and
+  each action waits up to 5 s to commit. `node fabric-gateway/src/batch-test.js 50` submits 50 at once and shows them landing in a single block.
+  Override with `BATCH_COUNT` / `BATCH_TIMEOUT` env vars when running `network-up.sh`.
 * **State machine:** `REGISTERED -> IN_TRANSIT -> RECEIVED -> MATCHED | FLAGGED`. Any out-of-order call is rejected, which also rejects duplicate dispatch/receipt.
 * **Duplicate / replay protection:** every write carries a unique `requestId`, stored on the ledger; reuse is rejected.
 * **Tamper evidence:** history is the Fabric blockchain itself (hash-linked blocks, endorsed by both orgs). `GetTransactionHistory` returns every state of a bag with its transaction ID. Nobody - including the admin - can edit past blocks; corrections are separate `RecordCorrection` events.
@@ -92,14 +96,47 @@ The restriction is in the **server**, in layers:
 
 ## 5. Request flows
 
-**Dispatch** (`POST /api/bags/<id>/dispatch`): authenticate -> role MLS & location check -> validate weight -> lock bag row ->
-reject if already dispatched (also `UNIQUE(bag_pk)`) -> create salt + commitment -> insert row -> submit `DispatchBag` as the
-operator's Fabric identity -> on success store tx ID, set `IN_TRANSIT`, audit-log, commit. If Fabric fails, the DB transaction is rolled
-back and the failed attempt is recorded in `blockchain_transactions`.
+MySQL and Fabric cannot be one atomic transaction, so every bag write (register, dispatch, receive, reconciliation) is a **write-ahead
+saga** in `services/workflow.py`:
 
-**Receive** (`POST /api/bags/<id>/receive`): same checks for FPS and status `IN_TRANSIT` -> insert receipt -> `ReceiveBag` -> commit ->
-server-side reconcile with the tolerance in force -> insert reconciliation -> `RecordReconciliation`. If only the last step fails the receipt
-stays valid and the reconciliation shows `chain_status = PENDING`; an admin can *Retry sync*.
+1. **Intent (one MySQL commit):** authenticate -> role/location check -> validate -> lock the bag row -> save the record (its `tx_id` stays empty)
+   and a `blockchain_transactions` row with status `PENDING`. A crash after this point loses nothing.
+2. **Send** the transaction as the operator's Fabric identity and get its **verified** outcome (`ledger.submit_tx`).
+3. **Settle (one MySQL commit)**, idempotent:
+   * `COMMITTED` (ledger said VALID) -> fill in `tx_id`/block, advance the bag state, audit-log.
+     For a receipt this **also creates the reconciliation row in the same commit**, so a bag can no longer be left in `RECEIVED`.
+   * `FAILED` (rejected at endorsement or invalidated at commit - certainly not on the ledger) -> the intended record is removed again.
+   * `UNKNOWN` (timeout / lost connection: the commit status was never seen) -> **nothing is rolled back and nothing is resent.**
+     The record stays `PENDING`, the API answers **202 `PENDING_CONFIRMATION`** (never "success"), and further actions on that bag are refused with 409.
+
+**Resolving unknown outcomes** (`resolve_pending`): runs automatically when the bag is viewed, before the next write on it, and from the admin
+button / `POST /api/admin/bags/<id>/resolve-pending`. It asks the ledger, first by transaction id (`/tx-status`, which reads the peer's `qscc`
+system chaincode: VALID / INVALID / NOT_FOUND) and, if the id was never received, by comparing the **on-chain bag state** with the saved record
+(the weight commitment is unique per attempt). Confirmed -> completed; INVALID -> undone; not on the ledger -> stays pending.
+Only an administrator can **abandon** a pending operation, and only if it is older than `PENDING_ABANDON_MINUTES` (default 15) *and* the ledger
+positively does not have it. Delayed block commits are absorbed by a short poll (`LEDGER_CONFIRM_POLLS` x `LEDGER_CONFIRM_INTERVAL`) before an
+operation is reported as pending.
+
+**Blind rule during recovery:** the FPS sees the MLS weight only once its **own receipt is confirmed on the ledger** (`access.has_confirmed_receipt`,
+i.e. `receipt_records.tx_id` is set), because an unconfirmed receipt can still be undone and re-entered.
+
+**Reconciliation on-chain write** (`RecordReconciliation`) follows the same pattern; `POST /api/admin/bags/<id>/retry-chain-sync` is idempotent:
+it rebuilds a missing reconciliation row from the original stored weights (never changing existing rows), checks the ledger for a result that is
+already there, and otherwise writes it once.
+
+Other writes (`GrantRole`, `RecordCorrection`) use the simpler path: on an unknown outcome the local change is not saved and a `PENDING`
+transaction row is kept, with an error telling the user the outcome is unknown.
+
+### 5b. How this was verified
+* Unit tests use an in-memory **fake** ledger that models on-chain state and the outcome cases (`backend/tests/test_reliability.py`).
+* Against the **real Fabric network**: a second gateway with a 300 ms commit wait (`COMMIT_STATUS_TIMEOUT_MS`, default 60 000) produces genuine
+  "unknown" outcomes for register, dispatch, receive and reconciliation; each was then completed from the ledger. The decoded blocks show exactly one
+  transaction per operation (no duplicates).
+* `audit_chain_head` (below) was tested with 40 concurrent requests against real MySQL.
+
+**Audit chain:** `audit_chain_head` is a single row holding the newest entry hash. `audit.log()` locks it (`SELECT ... FOR UPDATE`) before reading the
+previous hash, so concurrent requests queue instead of sharing a `prev_hash`. Entry format and hash calculation are unchanged.
+Lock order everywhere is bag row -> `blockchain_transactions` row -> audit head, so `audit.log()` must be the last thing before a commit.
 
 **QR scan:** QR = `http://<PUBLIC_BASE_URL>/b/BAG-0001` (nothing else). Not logged in -> `/login?next=...` -> back to the bag. The same URL renders the
 dispatch form for the right MLS operator, the blind receipt form for the right FPS operator, the read-only audit report for the auditor.

@@ -89,7 +89,7 @@ Open <http://localhost:5000>. Check everything: `backend\.venv\Scripts\python sc
 ## 5. Tests
 
 ```powershell
-cd backend ; .venv\Scripts\python -m pytest -q                 # 48 backend tests (SQLite + fake ledger)
+cd backend ; .venv\Scripts\python -m pytest -q                 # 82 backend tests (SQLite + fake ledger; 2 need the docker MySQL running)
 cd fabric\chaincode\pds-contract ; npm test                    # 13 chaincode tests (fake ledger stub)
 cd fabric-gateway ; node src\smoke-test.js                     # live Fabric test through the Gateway SDK (needs network)
 backend\.venv\Scripts\python scripts\e2e_demo.py --bag BAG-0001   # full scenario over HTTP on the running stack
