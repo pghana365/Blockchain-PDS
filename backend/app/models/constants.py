@@ -30,6 +30,10 @@ BAG_STATUSES = (STATUS_REGISTERED, STATUS_IN_TRANSIT, STATUS_RECEIVED, STATUS_MA
 
 MAX_BAG_WEIGHT_KG = 200  # sanity limit for a single gross-weight entry
 
+# The commodity is written to the shared ledger, so it is chosen from a fixed list rather than typed:
+# free text could carry a shop or place name onto Fabric. Existing bags keep whatever they had.
+COMMODITIES = ("Rice", "Fortified Rice", "Wheat", "Sugar", "Red Gram Dal")
+
 
 def utcnow() -> datetime:
     """Naive UTC timestamp (portable across MySQL/SQLite)."""

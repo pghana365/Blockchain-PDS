@@ -5,6 +5,7 @@ from flask import jsonify, request
 from flask_login import current_user
 
 from ..extensions import db
+from ..models.guards import GuardViolation
 from ..services import audit
 from ..services.ledger import LedgerError
 from ..services.workflow import WorkflowError
@@ -42,6 +43,11 @@ def api_guard(fn):
         except ValidationError as e:
             db.session.rollback()
             return jsonify(error=str(e), code="INVALID_INPUT"), 400
+        except GuardViolation as e:
+            db.session.rollback()
+            audit.log("REQUEST_REJECTED", current_user, "route", request.path,
+                      {"code": e.code, "message": e.message[:300]}, commit=True)
+            return jsonify(error=public_message(e.message), code=e.code), e.status
         except LedgerError as e:
             db.session.rollback()
             audit.log("LEDGER_ERROR", current_user, "route", request.path, {"message": e.message[:300]}, commit=True)

@@ -70,8 +70,10 @@ cd backend
 cd ..
 ```
 
-The demo users all share the password stored as `SEED_PASSWORD` in `.env`:
+All six demo users currently share the password stored as `SEED_PASSWORD` in `.env`:
 `admin`, `mls01.operator`, `mls02.operator`, `fps01.operator`, `fps02.operator`, `auditor1`.
+This is a local demonstration convenience, not a production authentication design. Separate account
+passwords, password rotation, and stronger authentication are deferred security requirements.
 
 ## 4. Run
 

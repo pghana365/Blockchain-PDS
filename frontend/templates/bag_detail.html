@@ -31,7 +31,7 @@
     <div class="card mb-3 border-primary">
       <div class="card-header">Dispatch this bag from {{ bag.origin_mls.shop_code }}</div>
       <div class="card-body">
-        <p class="text-muted mb-3">Weigh the full bag (rice + jute bag) and enter the <strong>gross weight in kg</strong>. Destination shop code: <strong class="mono">{{ bag.destination_fps.shop_code }}</strong>.</p>
+        <p class="text-muted mb-3">Weigh the full bag (rice + jute bag) and enter the <strong>gross weight in kg</strong>. Consignment: <strong class="mono">{{ bag.consignment_ref }}</strong>.</p>
         <form id="weight-form" data-kind="dispatch" novalidate>
           <label class="form-label" for="weight-kg">Gross weight (kg)</label>
           <div class="d-flex flex-wrap gap-3 align-items-center">
@@ -188,7 +188,8 @@
           {% for label, s in [('Origin MLS', bag.origin_mls), ('Destination FPS', bag.destination_fps)] if s %}
           <dt>{{ label }}</dt><dd><span class="mono">{{ s.shop_code }}</span>
             {% if s.name %}<br><span class="text-muted small">{{ s.name }}<br>{{ s.area }}</span>{% endif %}
-            {% if s.ledger_id %}<br><span class="text-muted small">Ledger ID {{ s.ledger_id }}</span>{% endif %}</dd>
+            {% if s.ledger_id %}<br><span class="text-muted small">Ledger ID {{ s.ledger_id }}</span>{% endif %}
+            {% if s.identity_changed_since %}<br><span class="small text-warning-emphasis">At registration: {{ s.at_registration.name }}, {{ s.at_registration.area }}</span>{% endif %}</dd>
           {% endfor %}
           <dt>Status</dt><dd>{{ badge(bag.status) }}</dd>
           <dt>Registered</dt><dd>{{ bag.registered_at|dt }}</dd>

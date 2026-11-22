@@ -33,7 +33,7 @@ cd backend ; .venv\Scripts\flask --app wsgi db upgrade ; .venv\Scripts\flask --a
 powershell -ExecutionPolicy Bypass -File scripts\start.ps1     # then open http://localhost:5000
 ```
 
-Demo users (all use `SEED_PASSWORD` from your `.env`): `admin`, `mls01.operator`, `mls02.operator`, `fps01.operator`, `fps02.operator`, `auditor1`.
+Demo users (all six currently share `SEED_PASSWORD` from your `.env`): `admin`, `mls01.operator`, `mls02.operator`, `fps01.operator`, `fps02.operator`, `auditor1`. This shared-password arrangement is demo-only and is **not production-ready**. Separate account passwords and stronger authentication are future security requirements.
 
 ## Roles
 
@@ -60,7 +60,7 @@ docs/               architecture.md, setup-guide.md
 
 | Suite | Command | Result at last run |
 |---|---|---|
-| Backend: required scenarios, security, page rendering, reliability/recovery, dashboard counters, bulk registration | `cd backend ; .venv\Scripts\python -m pytest -q` | **85 passed** (83 use SQLite + an in-memory *fake* ledger; 2 audit-concurrency tests need the docker MySQL and are skipped if it is not running) |
+| Backend: required scenarios, security, page rendering, reliability/recovery, dashboard counters, bulk registration, privacy and RBAC | `cd backend ; .venv\Scripts\python -m pytest -q` | **136 passed** in the latest run (SQLite + in-memory fake ledger; MySQL concurrency tests run when the test database is available) |
 | Chaincode | `cd fabric\chaincode\pds-contract ; npm test` | **13 passed** (fake ledger stub, not a network) |
 | Live Fabric via Gateway SDK | `cd fabric-gateway ; node src\smoke-test.js` | needs the running network; last run before the latest changes |
 | Full scenario on the running stack (real Fabric) | `backend\.venv\Scripts\python scripts\e2e_demo.py --bag BAG-9001` | 23/23 checks (run on the latest code) |

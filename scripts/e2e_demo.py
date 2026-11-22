@@ -82,7 +82,7 @@ check("FPS API response contains no dispatch weight", "50.5" not in txt and "dis
 check("FPS page contains no dispatch weight", "50.5" not in fps.s.get(f"{BASE}/b/{bag}").text)
 other = Client("fps02.operator")
 check("other FPS cannot see/receive this bag", other.call("GET", f"/api/bags/{bag}").status_code == 404
-      and other.call("POST", f"/api/bags/{bag}/receive", json={"weight_kg": "50"}).status_code == 403)
+      and other.call("POST", f"/api/bags/{bag}/receive", json={"weight_kg": "50"}).status_code == 404)
 
 print("\n== 5. FPS operator receives 47.5 kg")
 r = fps.call("POST", f"/api/bags/{bag}/receive", json={"weight_kg": "47.5"})

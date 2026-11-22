@@ -7,7 +7,7 @@ from flask import current_app
 from .extensions import db
 from .models import FpsLocation, MlsLocation, Role, Setting, User
 from .models.constants import (ALL_ROLES, ROLE_ADMIN, ROLE_AUDITOR, ROLE_DESCRIPTIONS, ROLE_FPS, ROLE_MLS)
-from .services import audit, settings, workflow
+from .services import audit, locations, settings, workflow
 from .utils.validators import validate_password
 
 # code, name, mandal, district - one MLS point per mandal
@@ -41,12 +41,17 @@ def register_cli(app):
                 db.session.add(Role(name=name, description=ROLE_DESCRIPTIONS[name]))
         if not db.session.get(Setting, settings.TOLERANCE_KEY):
             db.session.add(Setting(key=settings.TOLERANCE_KEY, value=current_app.config["DEFAULT_TOLERANCE_KG"]))
+        new_locs = []
         for code, name, mandal, dist in MLS:
             if not MlsLocation.query.filter_by(code=code).first():
-                db.session.add(MlsLocation(code=code, name=name, mandal=mandal, district=dist))
+                new_locs.append(MlsLocation(code=code, name=name, mandal=mandal, district=dist))
         for code, name, village, mandal, dist in FPS:
             if not FpsLocation.query.filter_by(code=code).first():
-                db.session.add(FpsLocation(code=code, name=name, village=village, mandal=mandal, district=dist))
+                new_locs.append(FpsLocation(code=code, name=name, village=village, mandal=mandal, district=dist))
+        db.session.add_all(new_locs)
+        db.session.flush()
+        for loc in new_locs:                       # first identity version of every seeded shop
+            locations.add_version(loc, None, "Seeded demo location", at=loc.created_at)
         db.session.flush()
         made = []
         for username, full, role, mls, fps, ident in USERS:
@@ -76,5 +81,7 @@ def register_cli(app):
             if Bag.query.filter_by(bag_id=bid).first():
                 click.echo(f"{bid} exists - skipped")
                 continue
-            bag = workflow.register_bag(admin, mls.id, fps.id, bid, "Rice", "CONS-DEMO-001")
+            ref = Bag.query.filter(Bag.bag_id.like("BAG-10%")).first()
+            ref = ref.consignment.reference if ref else None     # all demo bags share one consignment
+            bag = workflow.register_bag(admin, mls.id, fps.id, bid, "Rice", ref)
             click.echo(f"registered {bag.bag_id} tx {(bag.register_tx_id or 'PENDING')[:16]}...")

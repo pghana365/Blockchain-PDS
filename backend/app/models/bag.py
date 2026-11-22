@@ -111,6 +111,9 @@ class Correction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     bag_pk = db.Column(db.Integer, db.ForeignKey("bags.id"), nullable=False, index=True)
     note = db.Column(db.String(500), nullable=False)
+    # The note itself stays in MySQL (it is free text and may name places). The ledger receives only
+    # "sha256:" + sha256(bag_id|note|note_salt). NULL for corrections recorded before this existed.
+    note_salt = db.Column(db.String(64), nullable=True)
     admin_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     tx_id = db.Column(db.String(80), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)

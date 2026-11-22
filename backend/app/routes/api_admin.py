@@ -5,11 +5,10 @@ from ..extensions import db
 from ..middleware.auth import roles_required
 from ..models import Bag, FpsLocation, MlsLocation, ReconciliationRecord, Role, User
 from ..models.constants import ALL_ROLES, CHAIN_ROLE, ROLE_ADMIN, ROLE_AUDITOR, ROLE_FPS, ROLE_MLS
-from ..services import audit, settings, workflow
+from ..services import audit, locations, settings, workflow
 from ..services.ledger import LedgerError, chain_submit, get_ledger, new_request_id
 from ..services.serializers import bag_view
 from ..utils import validators as v
-from ..utils.shop_codes import new_fps_code, new_mls_code
 from .common import api_guard, json_body
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api/admin")
@@ -138,71 +137,65 @@ def update_user(user_id):
     return jsonify(user_dict(u))
 
 
+def location_dict(loc):
+    return {"id": loc.id, "kind": locations.kind_of(loc), "code": loc.code, "shop_code": loc.shop_code,
+            "name": loc.name, "village": getattr(loc, "village", None), "mandal": loc.mandal,
+            "district": loc.district, "is_active": loc.is_active}
+
+
 @bp.post("/locations")
 @roles_required(ROLE_ADMIN)
 @api_guard
 def create_location():
     d = json_body()
     kind = d.get("kind")
-    if kind not in ("MLS", "FPS"):
+    if kind not in locations.MODELS:
         raise v.ValidationError("kind must be MLS or FPS")
-    model = MlsLocation if kind == "MLS" else FpsLocation
-    code = v.validate_location_code(kind, d.get("code"))
-    if model.query.filter_by(code=code).first():
-        raise workflow.WorkflowError(f"{code} already exists", 409, "DUPLICATE_LOCATION")
-    name = v.clean_text(d.get("name"), "Name", 2, 120)
-    mandal = v.clean_text(d.get("mandal"), "Mandal", 2, 80)
-    district = v.clean_text(d.get("district"), "District", 2, 80)
-    extra = {}
-    if kind == "FPS" and (d.get("village") or "").strip():
-        extra["village"] = v.clean_text(d.get("village"), "Village / area", 2, 120)
-    new_code = new_mls_code if kind == "MLS" else new_fps_code
-    for _ in range(10):                 # shop code is random + UNIQUE: retry on the rare collision
-        shop_code = new_code()
-        if not model.query.filter_by(shop_code=shop_code).first():
-            break
-    else:
-        raise workflow.WorkflowError("Could not allocate a shop code; please retry", 503, "RETRY")
-    loc = model(code=code, shop_code=shop_code, name=name, mandal=mandal, district=district, **extra)
-    db.session.add(loc)
-    audit.log("LOCATION_CREATED", current_user, kind.lower(), code, {"name": loc.name, "shop_code": shop_code})
+    loc = locations.create_location(kind, d.get("code"), d, current_user)
+    audit.log("LOCATION_CREATED", current_user, kind.lower(), loc.code, {"name": loc.name, "shop_code": loc.shop_code})
     db.session.commit()
-    return jsonify(id=loc.id, code=loc.code, shop_code=loc.shop_code, name=loc.name, mandal=loc.mandal,
-                   district=loc.district, village=getattr(loc, "village", None)), 201
+    return jsonify(location_dict(loc)), 201
 
 
 @bp.patch("/locations/<kind>/<int:loc_id>")
 @roles_required(ROLE_ADMIN)
 @api_guard
 def update_location(kind, loc_id):
-    if kind not in ("MLS", "FPS"):
-        raise workflow.WorkflowError("Unknown location type", 404, "NOT_FOUND")
-    loc = db.session.get(MlsLocation if kind == "MLS" else FpsLocation, loc_id)
-    if not loc:
-        raise workflow.WorkflowError("Location not found", 404, "NOT_FOUND")
+    """Identity changes (name / village / mandal / district) need a `reason` and add a history
+    version. Shop codes and ledger ids are permanent and rejected if supplied."""
     d = json_body()
-    if "is_active" in d:
-        loc.is_active = bool(d["is_active"])
-    if "name" in d:
-        loc.name = v.clean_text(d["name"], "Name", 2, 120)
-    if "district" in d:
-        loc.district = v.clean_text(d["district"], "District", 2, 80)
-    if "mandal" in d:
-        loc.mandal = v.clean_text(d["mandal"], "Mandal", 2, 80)
-    if kind == "FPS" and "village" in d:
-        loc.village = v.clean_text(d["village"], "Village / area", 2, 120) if (d["village"] or "").strip() else None
-    # shop_code and the internal ledger id are permanent: they are never accepted from the client
+    loc, changed = locations.update_location(kind, loc_id, d, current_user)
     audit.log("LOCATION_UPDATED", current_user, kind.lower(), loc.code,
-              {k: d[k] for k in ("is_active", "name", "mandal", "village", "district") if k in d})
+              {"changed": sorted(changed), "is_active": d.get("is_active"),
+               "reason": d.get("reason") if changed else None})
     db.session.commit()
-    return jsonify(id=loc.id, code=loc.code, shop_code=loc.shop_code, is_active=loc.is_active)
+    return jsonify(location_dict(loc) | {"identity_changed": sorted(changed)})
+
+
+@bp.get("/locations/<kind>/<int:loc_id>/history")
+@roles_required(ROLE_ADMIN, ROLE_AUDITOR)      # read-only for the auditor; operators never
+@api_guard
+def location_history(kind, loc_id):
+    loc = db.session.get(locations.model_for(kind), loc_id)
+    if loc is None:
+        raise workflow.WorkflowError("Location not found", 404, "NOT_FOUND")
+    iso = lambda x: x.isoformat() + "Z" if hasattr(x, "isoformat") else x  # noqa: E731
+    return jsonify(location=location_dict(loc),
+                   versions=[{k: iso(val) for k, val in locations.version_view(r).items()}
+                             for r in locations.history(kind, loc_id)])
 
 
 @bp.post("/bags")
 @roles_required(ROLE_ADMIN)
 @api_guard
 def register_bags():
+    """Register bags on the ledger. The consignment is either NEW (server-generated ledger id and a
+    random reference) or an EXISTING one chosen by its reference. Free-text consignment ids are no
+    longer accepted: they are written to the shared ledger and could carry place names."""
     d = json_body()
+    if d.get("consignment_id"):
+        raise v.ValidationError("Free-text consignment IDs are no longer accepted. Leave it empty for a new "
+                                "consignment, or choose an existing consignment by its reference.")
     try:
         mls_id, fps_id = int(d.get("mls_id")), int(d.get("fps_id"))
         count = int(d.get("count") or 1)
@@ -212,19 +205,19 @@ def register_bags():
         raise v.ValidationError("count must be between 1 and 50")
     if count > 1 and d.get("bag_id"):
         raise v.ValidationError("Leave Bag ID empty when registering several bags")
+    consignment_ref = (d.get("consignment_ref") or "").strip().upper() or None
+    commodity = d.get("commodity") or "Rice"
     if count > 1:
-        bags, outcome = workflow.register_bags(
-            current_user, mls_id, fps_id, count, d.get("commodity") or "Rice",
-            d.get("consignment_id") or None)
+        bags, outcome = workflow.register_bags(current_user, mls_id, fps_id, count, commodity, consignment_ref)
         return jsonify(
             created=[{"bag_id": bag.bag_id, "tx_id": bag.register_tx_id,
                       "pending": bag.register_tx_id is None} for bag in bags],
+            consignment_ref=bags[0].consignment.reference if bags else None,
             outcome=outcome), (202 if outcome == workflow.OUTCOME_PENDING else 201)
-    created = []
-    bag = workflow.register_bag(current_user, mls_id, fps_id, d.get("bag_id") or None,
-                                d.get("commodity") or "Rice", d.get("consignment_id") or None)
-    created.append({"bag_id": bag.bag_id, "tx_id": bag.register_tx_id, "pending": bag.register_tx_id is None})
-    return jsonify(created=created, outcome="PENDING_CONFIRMATION" if created[0]["pending"] else "CONFIRMED"), (
+    bag = workflow.register_bag(current_user, mls_id, fps_id, d.get("bag_id") or None, commodity, consignment_ref)
+    created = [{"bag_id": bag.bag_id, "tx_id": bag.register_tx_id, "pending": bag.register_tx_id is None}]
+    return jsonify(created=created, consignment_ref=bag.consignment.reference,
+                   outcome="PENDING_CONFIRMATION" if created[0]["pending"] else "CONFIRMED"), (
         202 if created[0]["pending"] else 201)
 
 

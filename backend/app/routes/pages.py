@@ -2,9 +2,10 @@ from flask import Blueprint, current_app, redirect, render_template, request, ur
 from flask_login import current_user, login_required
 
 from ..middleware.auth import forbidden, roles_required
-from ..models import (AuditLog, Bag, BlockchainTransaction, FpsLocation, MlsLocation, Role, User)
-from ..models.constants import (BAG_STATUSES, ROLE_ADMIN, ROLE_AUDITOR, ROLE_FPS, ROLE_MLS)
-from ..services import access, audit, reports, settings, workflow
+from ..extensions import db
+from ..models import (AuditLog, Bag, BlockchainTransaction, Consignment, FpsLocation, MlsLocation, Role, User)
+from ..models.constants import (BAG_STATUSES, COMMODITIES, ROLE_ADMIN, ROLE_AUDITOR, ROLE_FPS, ROLE_MLS)
+from ..services import access, audit, locations, reports, settings, workflow
 from ..services.serializers import bag_view
 
 bp = Blueprint("pages", __name__)
@@ -72,8 +73,9 @@ def bag_detail(bag_id):
 @roles_required(ROLE_ADMIN, ROLE_AUDITOR)
 def discrepancies():
     show_all = request.args.get("all") == "1"
-    rows = reports.discrepancy_rows(current_user, only_flagged=not show_all)
-    return render_template("reports/discrepancies.html", rows=rows, show_all=show_all,
+    q = request.args.get("q", "").strip()
+    rows = reports.discrepancy_rows(current_user, only_flagged=not show_all, q=q or None)
+    return render_template("reports/discrepancies.html", rows=rows, show_all=show_all, q=q,
                            tolerance=settings.get_tolerance())
 
 
@@ -126,7 +128,20 @@ def admin_bags():
                            q=q, sel_status=status, statuses=BAG_STATUSES,
                            mls=MlsLocation.query.filter_by(is_active=True).order_by(MlsLocation.code).all(),
                            fps=FpsLocation.query.filter_by(is_active=True).order_by(FpsLocation.code).all(),
-                           next_id=workflow.next_bag_id())
+                           consignments=Consignment.query.order_by(Consignment.id.desc()).limit(200).all(),
+                           commodities=COMMODITIES, next_id=workflow.next_bag_id())
+
+
+@bp.get("/admin/locations/<kind>/<int:loc_id>/history")
+@roles_required(ROLE_ADMIN, ROLE_AUDITOR)     # auditor: read-only; operators: never
+def location_history(kind, loc_id):
+    if kind not in locations.MODELS:
+        return render_template("error.html", code=404, message="Location not found."), 404
+    loc = db.session.get(locations.MODELS[kind], loc_id)
+    if loc is None:
+        return render_template("error.html", code=404, message="Location not found."), 404
+    return render_template("admin/location_history.html", loc=loc, kind=kind,
+                           versions=list(reversed(locations.history(kind, loc_id))))
 
 
 @bp.get("/admin/bags/<bag_id>/label")

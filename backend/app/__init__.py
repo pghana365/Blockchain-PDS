@@ -74,6 +74,15 @@ def register_hooks(app):
             return jsonify(error=e.message, code=e.code), e.status
         return render_template("error.html", code=e.status, message=e.message), e.status
 
+    from .models.guards import GuardViolation
+
+    @app.errorhandler(GuardViolation)
+    def guard_violation(e):
+        db.session.rollback()
+        if request.path.startswith("/api/"):
+            return jsonify(error=e.message, code=e.code), e.status
+        return render_template("error.html", code=e.status, message=e.message), e.status
+
     @app.errorhandler(CSRFError)
     def csrf_error(e):
         if request.path.startswith("/api/"):

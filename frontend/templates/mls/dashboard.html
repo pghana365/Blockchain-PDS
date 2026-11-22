@@ -26,12 +26,12 @@
     </form>
   </div>
   <div class="table-responsive"><table class="table table-hover mb-0">
-    <thead><tr><th>Bag</th><th>Destination FPS</th><th>Status</th><th>My dispatch weight</th><th>Dispatched</th><th>Transaction</th><th></th></tr></thead>
+    <thead><tr><th>Bag</th><th>Consignment ref.</th><th>Status</th><th>My dispatch weight</th><th>Dispatched</th><th>Transaction</th><th></th></tr></thead>
     <tbody>
     {% for b, d in rows %}
       <tr>
         <td><a href="{{ url_for('pages.bag_detail', bag_id=b.bag_id) }}">{{ b.bag_id }}</a></td>
-        <td class="mono">{{ b.fps.shop_code }}</td>{# random code only: no name, city or ledger id #}
+        <td class="mono">{{ b.consignment.reference }}</td>{# Option C: nothing about the destination #}
         <td>{{ badge(b.status) }}</td>
         <td>{{ kg(d.weight_kg) if d else '-' }}</td>
         <td>{{ d.dispatched_at|dt if d else '-' }}</td>

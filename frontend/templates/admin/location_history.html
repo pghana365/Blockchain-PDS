@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block heading %}{{ loc.shop_code }} - identity history{% endblock %}
+{% block actions %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.admin_locations') }}">Back to directory</a>{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="{{ 'col-xl-8' if current_user.is_admin else 'col-12' }}">
+    <div class="card mb-3"><div class="card-body">
+      <dl class="kv mb-0">
+        <dt>Shop code</dt><dd class="mono fw-semibold">{{ loc.shop_code }} <span class="text-muted small">(permanent)</span></dd>
+        <dt>Ledger ID</dt><dd class="mono">{{ loc.code }} <span class="text-muted small">(permanent)</span></dd>
+        <dt>Current identity</dt><dd>{{ loc.name }}<br><span class="text-muted small">{{ loc.area }}</span></dd>
+        <dt>State</dt><dd>{{ 'Active' if loc.is_active else 'Inactive' }}</dd>
+      </dl>
+    </div></div>
+    <div class="card">
+      <div class="card-header">Versions (append-only; newest first)</div>
+      <div class="table-responsive"><table class="table mb-0">
+        <thead><tr><th>Valid from</th><th>Valid to</th><th>Name</th><th>Area</th><th>Changed by</th><th>Reason</th></tr></thead>
+        <tbody>
+        {% for h in versions %}
+          <tr class="{{ 'table-success' if not h.valid_to }}">
+            <td class="small">{{ h.valid_from|dt }}</td>
+            <td class="small">{{ h.valid_to|dt if h.valid_to else 'current' }}</td>
+            <td>{{ h.name }}</td><td class="small">{{ h.area }}</td>
+            <td class="small">{{ h.changer.username if h.changer else 'system' }}</td>
+            <td class="small">{{ h.reason }}</td>
+          </tr>
+        {% else %}<tr><td colspan="6" class="text-muted text-center py-3">No versions recorded.</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+  {% if current_user.is_admin %}
+  <div class="col-xl-4">
+    <div class="card"><div class="card-header">Change identity</div><div class="card-body">
+      <form data-api="{{ url_for('api_admin.update_location', kind=kind, loc_id=loc.id) }}" data-method="PATCH" data-reload>
+        <div class="mb-2"><label class="form-label">Name</label><input name="name" class="form-control" value="{{ loc.name }}" required maxlength="120"></div>
+        {% if kind == 'FPS' %}<div class="mb-2"><label class="form-label">Village / area</label><input name="village" class="form-control" value="{{ loc.village or '' }}" maxlength="120"></div>{% endif %}
+        <div class="mb-2"><label class="form-label">Mandal</label><input name="mandal" class="form-control" value="{{ loc.mandal }}" required maxlength="80"></div>
+        <div class="mb-2"><label class="form-label">District</label><input name="district" class="form-control" value="{{ loc.district }}" required maxlength="80"></div>
+        <div class="mb-3"><label class="form-label">Reason for the change</label><input name="reason" class="form-control" required minlength="5" maxlength="300"></div>
+        <button class="btn btn-primary w-100" type="submit">Save as a new version</button>
+        <div class="js-result d-none"></div>
+      </form>
+      <p class="text-muted small mt-3 mb-0">The current version is closed and a new one is added. Earlier versions are never changed or deleted, so older bags keep showing the identity that applied when they were registered. The shop code and ledger ID cannot be changed.</p>
+    </div></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

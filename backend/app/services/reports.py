@@ -1,8 +1,8 @@
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from ..extensions import db
-from ..models import (Bag, BlockchainTransaction, Consignment, DispatchRecord, ReceiptRecord,
-                      ReconciliationRecord, Role, User)
+from ..models import (Bag, BlockchainTransaction, Consignment, DispatchRecord, FpsLocation, MlsLocation,
+                      ReceiptRecord, ReconciliationRecord, Role, User)
 from ..models.constants import (ROLE_FPS, ROLE_MLS, STATUS_FLAGGED, STATUS_IN_TRANSIT, STATUS_MATCHED)
 from . import access
 
@@ -62,24 +62,36 @@ def fps_receipts(user):
             .order_by(ReceiptRecord.id.desc()).limit(500).all())
 
 
+def _search(query, q):
+    """Admin/auditor search across the protected mapping: bag id, consignment reference,
+    ledger consignment id, and either shop's permanent shop code."""
+    if not q:
+        return query
+    like = f"%{q.strip().upper()[:40]}%"
+    query = (query.join(Consignment, Consignment.id == Bag.consignment_id)
+             .join(MlsLocation, MlsLocation.id == Bag.mls_id).join(FpsLocation, FpsLocation.id == Bag.fps_id))
+    return query.filter(or_(Bag.bag_id.like(like), Consignment.reference.like(like), Consignment.code.like(like),
+                            MlsLocation.shop_code.like(like), FpsLocation.shop_code.like(like)))
+
+
 def audit_rows(q=None, status=None, limit=500):
     """Admin/auditor full listing."""
     query = (db.session.query(Bag, DispatchRecord, ReceiptRecord, ReconciliationRecord)
              .outerjoin(DispatchRecord, DispatchRecord.bag_pk == Bag.id)
              .outerjoin(ReceiptRecord, ReceiptRecord.bag_pk == Bag.id)
              .outerjoin(ReconciliationRecord, ReconciliationRecord.bag_pk == Bag.id))
-    if q:
-        like = f"%{q.strip().upper()}%"
-        query = query.filter(Bag.bag_id.like(like))
+    query = _search(query, q)
     if status:
         query = query.filter(Bag.status == status)
     return query.order_by(Bag.id.desc()).limit(limit).all()
 
 
-def discrepancy_rows(user, only_flagged=True):
+def discrepancy_rows(user, only_flagged=True, q=None):
     """Discrepancy report. Never available to FPS before receipt: scoped by role."""
     query = (db.session.query(Bag, ReconciliationRecord)
              .join(ReconciliationRecord, ReconciliationRecord.bag_pk == Bag.id))
+    if user.is_admin or user.is_auditor:
+        query = _search(query, q)
     if only_flagged:
         query = query.filter(ReconciliationRecord.status == STATUS_FLAGGED)
     if user.is_mls:

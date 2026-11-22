@@ -16,7 +16,9 @@ A bag only changes state, and a transaction is only reported as successful, afte
 has confirmed it. Settling and resolving are idempotent, so retries cannot create duplicate
 receipts, reconciliations or Fabric transactions.
 """
+import hashlib
 import re
+import secrets
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -26,13 +28,13 @@ from sqlalchemy.exc import IntegrityError
 from ..extensions import db
 from ..models import (Bag, BlockchainTransaction, Consignment, Correction, DispatchRecord, FpsLocation,
                       MlsLocation, ReceiptRecord, ReconciliationRecord, Setting, User)
-from ..models.constants import (MAX_BAG_WEIGHT_KG, STATUS_FLAGGED, STATUS_IN_TRANSIT, STATUS_MATCHED,
-                                STATUS_RECEIVED, STATUS_REGISTERED, utcnow)
+from ..models.constants import (COMMODITIES, MAX_BAG_WEIGHT_KG, STATUS_FLAGGED, STATUS_IN_TRANSIT,
+                                STATUS_MATCHED, STATUS_RECEIVED, STATUS_REGISTERED, utcnow)
 from . import audit
 from .ledger import (COMMITTED, FAILED, UNKNOWN, LedgerError, TxResult, chain_submit, commitment, fmt_weight,
                      get_ledger, new_request_id, new_salt, submit_tx, tx_status)
 from .settings import TOLERANCE_KEY, get_tolerance
-from ..utils.shop_codes import new_consignment_reference
+from ..utils.shop_codes import new_consignment_reference, new_ledger_consignment_id
 
 BAG_ID_RE = re.compile(r"^BAG-\d{4,}$")
 FLAG_MESSAGE = ("Discrepancy flagged: this requires further verification. "
@@ -182,7 +184,15 @@ def _apply_failure(op, bag, error):
     if op.function == "RegisterBag":
         op.bag_pk = None                                   # keep the failed attempt visible, drop the bag row
         db.session.flush()
+        cons_id = bag.consignment_id
         db.session.delete(bag)
+        db.session.flush()
+        # a consignment that never got a confirmed bag must not linger as an orphan in MySQL (it has
+        # no ledger counterpart); a consignment that still has other bags is kept untouched
+        if not db.session.query(Bag.id).filter_by(consignment_id=cons_id).first():
+            cons = db.session.get(Consignment, cons_id)
+            if cons is not None:
+                db.session.delete(cons)
     elif op.function == "DispatchBag":
         DispatchRecord.query.filter_by(bag_pk=bag.id, tx_id=None).delete()
     elif op.function == "ReceiveBag":
@@ -336,33 +346,46 @@ def _lock_bag_id_allocator():
         raise WorkflowError("Application settings are not initialized", 500, "SETTINGS_NOT_INITIALIZED")
 
 
-def _neutral_consignment_code():
-    """Random ledger consignment id (no date, route or shop code); retried on the rare collision."""
-    for _ in range(10):
-        code = "CONS-" + new_consignment_reference()[4:]
-        if not Consignment.query.filter_by(code=code).first():
-            return code
-    raise WorkflowError("Could not allocate a consignment id; please retry", 503, "RETRY")
+MAX_CONSIGNMENT_ATTEMPTS = 8
 
 
-def _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code):
-    """Persist one registration intent without contacting Fabric."""
+class _IdentifierCollision(Exception):
+    """A freshly drawn consignment reference / ledger id already exists (UNIQUE rejected it)."""
+
+
+def _new_consignment(admin, mls, fps):
+    """Insert a consignment with a random reference and an independent random ledger id.
+    Uniqueness is decided by the database's UNIQUE indexes, not by a racy pre-check: a duplicate
+    aborts the flush and the caller retries the whole preparation in a fresh transaction."""
+    cons = Consignment(code=new_ledger_consignment_id(), reference=new_consignment_reference(),
+                       mls_id=mls.id, fps_id=fps.id, created_by=admin.id)
+    db.session.add(cons)
+    try:
+        db.session.flush()
+    except IntegrityError as exc:
+        db.session.rollback()
+        raise _IdentifierCollision() from exc
+    return cons
+
+
+def _existing_consignment(reference, mls, fps):
+    """An admin-chosen consignment. Its route is permanent, so the request must name the same shops."""
+    cons = Consignment.query.filter_by(reference=reference).one_or_none()
+    if cons is None:
+        raise WorkflowError("No consignment with that reference", 404, "CONSIGNMENT_NOT_FOUND")
+    if cons.mls_id != mls.id or cons.fps_id != fps.id:
+        raise WorkflowError(
+            f"Consignment {cons.reference} runs from {cons.mls.shop_code} to {cons.fps.shop_code}. "
+            "Choose that MLS and FPS, or leave the consignment empty to start a new one.", 409, "CONSIGNMENT_MISMATCH")
+    return cons
+
+
+def _prepare_register(admin, cons, bag_id, commodity):
+    """Persist one registration intent without contacting Fabric. Ledger arguments are only ids:
+    bag id, commodity (fixed list), ledger location ids, the server-generated consignment id."""
     if Bag.query.filter_by(bag_id=bag_id).first():
         raise WorkflowError(f"{bag_id} is already registered", 409, "DUPLICATE_BAG")
-
-    # The consignment id goes on the ledger, so the default must not encode the route or a shop code.
-    code = (consignment_code or _neutral_consignment_code()).strip().upper()
-    if not re.match(r"^[A-Z0-9-]{3,40}$", code):
-        raise WorkflowError("Consignment ID: 3-40 characters A-Z, 0-9, '-'", 400, "INVALID_INPUT")
-    cons = Consignment.query.filter_by(code=code).first()
-    if cons and (cons.mls_id != mls.id or cons.fps_id != fps.id):
-        raise WorkflowError("That consignment already exists for a different MLS/FPS", 409, "CONSIGNMENT_MISMATCH")
-    if not cons:
-        cons = Consignment(code=code, mls_id=mls.id, fps_id=fps.id, created_by=admin.id)
-        db.session.add(cons)
-        db.session.flush()
-
-    bag = Bag(bag_id=bag_id, commodity=commodity, consignment_id=cons.id, mls_id=mls.id, fps_id=fps.id,
+    bag = Bag(bag_id=bag_id, commodity=commodity, consignment_id=cons.id, mls_id=cons.mls_id, fps_id=cons.fps_id,
               status=STATUS_REGISTERED, created_by=admin.id)
     db.session.add(bag)
     try:
@@ -372,33 +395,46 @@ def _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code):
         raise WorkflowError(f"{bag_id} is already registered", 409, "DUPLICATE_BAG")
     rid = new_request_id()
     op = _begin_op(admin, bag.id, "RegisterBag", rid)
-    return bag, op, [bag_id, commodity, mls.code, fps.code, cons.code, rid]
+    return bag, op, [bag_id, commodity, cons.mls.code, cons.fps.code, cons.code, rid]
 
 
-def _validate_register_request(admin, mls_id, fps_id, commodity, consignment_code):
+def _validate_register_request(admin, mls_id, fps_id, commodity):
     if not admin.is_admin:
         raise WorkflowError("Only an administrator can register bags", 403, "FORBIDDEN")
     mls, fps = db.session.get(MlsLocation, mls_id), db.session.get(FpsLocation, fps_id)
     if not mls or not mls.is_active or not fps or not fps.is_active:
         raise WorkflowError("Choose an active MLS and an active destination FPS", 400, "INVALID_LOCATION")
     commodity = (commodity or "Rice").strip()
-    if not commodity or len(commodity) > 50:
-        raise WorkflowError("Commodity must be 1-50 characters", 400, "INVALID_INPUT")
+    if commodity not in COMMODITIES:                       # fixed list: free text would reach the ledger
+        raise WorkflowError(f"Commodity must be one of: {', '.join(COMMODITIES)}", 400, "INVALID_INPUT")
     _need_identity(admin)
-    return mls, fps, commodity, consignment_code
+    return mls, fps, commodity
 
 
-def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignment_code=None):
-    """Returns the bag. `bag.register_tx_id` is None while the registration awaits confirmation."""
-    mls, fps, commodity, consignment_code = _validate_register_request(
-        admin, mls_id, fps_id, commodity, consignment_code)
+def _prepare_batch(admin, mls_id, fps_id, commodity, consignment_ref, bag_ids):
+    """Validate, choose/create the consignment and write all registration intents in ONE transaction.
+    Retried from scratch if a new consignment's random identifiers collide (also under concurrency:
+    the loser of a race gets the UNIQUE violation, rolls back everything and draws again).
+    `bag_ids` is a list of explicit ids or None per bag (None = next free id). Caller commits."""
+    for _ in range(MAX_CONSIGNMENT_ATTEMPTS):
+        mls, fps, commodity = _validate_register_request(admin, mls_id, fps_id, commodity)
+        if any(b is None for b in bag_ids):
+            _lock_bag_id_allocator()
+        try:
+            cons = (_existing_consignment(consignment_ref, mls, fps) if consignment_ref
+                    else _new_consignment(admin, mls, fps))
+        except _IdentifierCollision:
+            continue
+        return [_prepare_register(admin, cons, b or next_bag_id(locked=True), commodity) for b in bag_ids]
+    raise WorkflowError("Could not allocate a unique consignment reference; please retry", 503, "RETRY")
+
+
+def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignment_ref=None):
+    """Returns the bag. `bag.register_tx_id` is None while the registration awaits confirmation.
+    consignment_ref: reference of an existing consignment, or None for a new consignment."""
     if bag_id:
         bag_id = normalize_bag_id(bag_id)
-    else:
-        _lock_bag_id_allocator()
-        bag_id = next_bag_id(locked=True)
-
-    bag, op, args = _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code)
+    ((bag, op, args),) = _prepare_batch(admin, mls_id, fps_id, commodity, consignment_ref, [bag_id])
     op_id, bag_pk, identity = op.id, bag.id, admin.fabric_identity
     db.session.commit()                                    # write-ahead: the intent is durable before Fabric is called
 
@@ -407,17 +443,12 @@ def register_bag(admin, mls_id, fps_id, bag_id=None, commodity="Rice", consignme
     return db.session.get(Bag, bag_pk)
 
 
-def register_bags(admin, mls_id, fps_id, count, commodity="Rice", consignment_code=None):
-    """Register independent bags concurrently without bypassing write-ahead recovery."""
+def register_bags(admin, mls_id, fps_id, count, commodity="Rice", consignment_ref=None):
+    """Register independent bags concurrently without bypassing write-ahead recovery.
+    All bags of one call share one consignment (new, or the chosen existing one)."""
     if count < 1:
         raise WorkflowError("count must be at least 1", 400, "INVALID_COUNT")
-    mls, fps, commodity, consignment_code = _validate_register_request(
-        admin, mls_id, fps_id, commodity, consignment_code)
-    _lock_bag_id_allocator()
-    consignment_code = consignment_code or _neutral_consignment_code()   # one consignment for the batch
-    prepared = []
-    for _ in range(count):
-        prepared.append(_prepare_register(admin, mls, fps, next_bag_id(locked=True), commodity, consignment_code))
+    prepared = _prepare_batch(admin, mls_id, fps_id, commodity, consignment_ref, [None] * count)
     db.session.commit()
 
     from concurrent.futures import ThreadPoolExecutor
@@ -561,6 +592,12 @@ def sync_reconciliation_to_chain(actor, bag_id) -> bool:
 
 
 # ---------------------------------------------------------------- corrections
+def correction_commitment(bag_id, note, salt):
+    """What the ledger stores for a correction: 'sha256:' + hex(sha256(bag_id|note|salt)). 71 chars,
+    within the chaincode's 5-500 limit, so the chaincode is unchanged."""
+    return "sha256:" + hashlib.sha256(f"{bag_id}|{note}|{salt}".encode("utf-8")).hexdigest()
+
+
 def add_correction(admin, bag_id, note):
     if not admin.is_admin:
         raise WorkflowError("Only an administrator can record corrections", 403, "FORBIDDEN")
@@ -569,8 +606,11 @@ def add_correction(admin, bag_id, note):
         raise WorkflowError("Correction note must be 5-500 characters", 400, "INVALID_INPUT")
     bag = _locked_bag(normalize_bag_id(bag_id))
     rid = new_request_id()
-    out = chain_submit(admin, bag, "RecordCorrection", [bag.bag_id, note, rid], rid)
-    c = Correction(bag_pk=bag.id, note=note, admin_id=admin.id, tx_id=out["txId"])
+    # The note is free text and may name a shop or place, so the ledger only receives a salted
+    # commitment that anchors it; the readable note stays in MySQL (admin/auditor only).
+    salt = secrets.token_hex(16)
+    out = chain_submit(admin, bag, "RecordCorrection", [bag.bag_id, correction_commitment(bag.bag_id, note, salt), rid], rid)
+    c = Correction(bag_pk=bag.id, note=note, note_salt=salt, admin_id=admin.id, tx_id=out["txId"])
     db.session.add(c)
     audit.log("CORRECTION_RECORDED", admin, "bag", bag.bag_id, {"note": note, "tx": out["txId"]})
     db.session.commit()

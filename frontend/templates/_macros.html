@@ -21,6 +21,12 @@
   {% endif %}
 {%- endmacro %}
 
+{# Admin / auditor reports only: never include this macro in an operator page. #}
+{% macro route(b) -%}
+  <span class="mono">{{ b.mls.shop_code }}</span> &rarr; <span class="mono">{{ b.fps.shop_code }}</span>
+  <div class="text-muted small">{{ b.mls.name }} &rarr; {{ b.fps.name }}</div>
+{%- endmacro %}
+
 {% macro stat(label, value, cls='') -%}
   <div class="col-6 col-md-4 col-xl-3">
     <div class="card stat-card {{ cls }}"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>

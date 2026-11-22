@@ -169,7 +169,7 @@ Hierarchy: District -> Mandal -> Village/ward. An MLS (Mandal Level Stock point)
 
 What each role receives is decided in `services/serializers.py::bag_view`, an allow-list per role: fields an operator may not see are never put in the response, so no page, JSON call or browser tool can reveal them.
 
-* **MLS** sees its own shop, the destination's `shop_code` only, and a neutral consignment reference (`CNS-...`). It does not see the FPS name, district, ledger ID or FPS operator, even after receipt.
+* **MLS** sees its own shop and a neutral consignment reference (`CNS-...`). It does not see the FPS shop code, name, district, ledger ID or FPS operator, even after receipt.
 * **FPS** sees its own shop and the neutral consignment reference. It sees nothing about the origin MLS (no name, district, shop code or ledger ID) and, after its receipt is confirmed, the dispatch weight without the dispatcher's identity.
 * **Admin** manages the directory (`/admin/locations`); shop codes are generated server-side and cannot be set or changed by a client. **Auditor** has the same directory read-only.
 * A bag at another location is rejected with exactly the same 404 as a bag that does not exist, for reads and for dispatch/receive, so bag IDs cannot be probed. Ledger error text is scrubbed of ledger IDs for operators.
@@ -178,12 +178,12 @@ What each role receives is decided in `services/serializers.py::bag_view`, an al
 
 Limitations:
 
-* **The shop code is permanent**, so an MLS operator can tell that several bags go to the same FPS and recognise it again later. That is inherent in showing a stable code. FPS operators get no origin identifier, so they cannot correlate sources this way. The consignment reference groups the bags of one consignment only.
+* **The shop code is permanent** for administrative identity and is shown only for the operator's own shop. Neither operator can correlate bags by the other party's shop code. The consignment reference groups the bags of one consignment only.
 * **Geography can reveal the source.** Because an FPS is normally supplied by its own mandal's MLS point, an FPS operator who knows their mandal can guess the source even though the app never shows it. Hiding the origin only adds protection where stock can come from MLS points in other mandals.
 * The privacy applies to the web application. Anyone with MySQL, gateway-key, Fabric-wallet or peer access sees ledger IDs and routes. Operators must not be given those.
 * **History on the ledger is not rewritten.** Bags registered before this feature carry consignment IDs that include ledger IDs (e.g. `CONS-20261104-MLS-01-FPS-01`). Those are no longer shown to operators, but they remain in the Fabric blocks.
 * Information outside the system (paperwork, vehicle routes, people talking) is out of scope.
-* Demo users share one password, so anyone who knows it can sign in as admin. Use separate credentials before handing accounts to different people.
+* **All six demo accounts currently share one password** from `SEED_PASSWORD`, including the admin and auditor accounts. This shared-password arrangement is for local demonstration only and is not production-ready. Separate account passwords, password rotation, and stronger authentication are future security requirements.
 
 ## 7. Known limitations (prototype)
 

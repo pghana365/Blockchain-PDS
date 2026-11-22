@@ -6,7 +6,7 @@ bag physically contains no weight data.
 """
 from ..models import BlockchainTransaction, Correction
 from ..models.constants import STATUS_FLAGGED, STATUS_IN_TRANSIT, STATUS_REGISTERED
-from . import access
+from . import access, locations
 from .ledger import fmt_weight
 from .workflow import FLAG_MESSAGE, MATCH_MESSAGE
 
@@ -15,19 +15,25 @@ def iso(dt):
     return dt.isoformat(timespec="seconds") + "Z" if dt else None
 
 
-def _shop(loc, level):
-    """What a viewer may know about one shop.
-    full -> admin/auditor: shop code, internal ledger id, real name and district
-    own  -> the operator's own shop: shop code, real name and district
-    code -> the other party, MLS viewing the destination: the random shop code only"""
-    if level not in ("full", "own"):
-        return {"shop_code": loc.shop_code}
+def _shop(loc, level, as_of=None):
+    """What a viewer may know about one shop (Option C).
+    own  -> an operator's OWN shop: shop code and current real identity
+    full -> admin/auditor: shop code, ledger id, current identity, and the identity that was valid
+            at `as_of` (the bag's registration) from the append-only history
+    There is no level for the OTHER party: an operator never receives anything about it."""
     view = {"shop_code": loc.shop_code, "name": loc.name, "mandal": loc.mandal, "district": loc.district,
             "area": loc.area}
     if hasattr(loc, "village"):
         view["village"] = loc.village
     if level == "full":
         view["ledger_id"] = loc.code
+        version = locations.identity_at(loc, as_of) if as_of else None
+        if version is not None:
+            view["at_registration"] = {"name": version.name, "area": version.area, "village": version.village,
+                                       "mandal": version.mandal, "district": version.district,
+                                       "valid_from": iso(version.valid_from)}
+            view["identity_changed_since"] = (version.name, version.village, version.mandal, version.district) != (
+                loc.name, getattr(loc, "village", None), loc.mandal, loc.district)
     return view
 
 
@@ -56,14 +62,13 @@ def bag_view(user, bag, with_transactions=True):
         "pending": [{"operation": o.function, "since": iso(o.created_at)} for o in pending_ops],
     }
     if privileged:
-        v["consignment_id"] = bag.consignment.code          # ledger id; may encode the route
-        v["origin_mls"] = _shop(bag.mls, "full")
-        v["destination_fps"] = _shop(bag.fps, "full")
+        v["consignment_id"] = bag.consignment.code          # ledger id (older ones may encode the route)
+        v["origin_mls"] = _shop(bag.mls, "full", bag.created_at)
+        v["destination_fps"] = _shop(bag.fps, "full", bag.created_at)
     elif user.is_mls:
-        v["origin_mls"] = _shop(bag.mls, "own")
-        v["destination_fps"] = _shop(bag.fps, "code")      # destination: random code only
+        v["origin_mls"] = _shop(bag.mls, "own")            # destination: nothing, not even its shop code
     elif user.is_fps:
-        v["destination_fps"] = _shop(bag.fps, "own")       # origin: nothing at all, not even a code
+        v["destination_fps"] = _shop(bag.fps, "own")       # origin: nothing, not even its shop code
 
     d = access.visible_dispatch(user, bag)
     if d:

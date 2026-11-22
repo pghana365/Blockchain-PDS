@@ -4,18 +4,18 @@
 <div class="card mb-3">
   <div class="card-header">{{ title }}</div>
   <div class="table-responsive"><table class="table mb-0">
-    <thead><tr><th>Shop code</th><th>Name</th>{% if kind == 'FPS' %}<th>Village / area</th>{% endif %}<th>Mandal</th><th>District</th><th>Ledger ID</th><th>State</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Shop code</th><th>Name</th>{% if kind == 'FPS' %}<th>Village / area</th>{% endif %}<th>Mandal</th><th>District</th><th>Ledger ID</th><th>State</th><th></th></tr></thead>
     <tbody>
     {% for l in items %}
       <tr><td class="fw-semibold mono">{{ l.shop_code }}</td><td>{{ l.name }}</td>
         {% if kind == 'FPS' %}<td>{{ l.village or '-' }}</td>{% endif %}<td>{{ l.mandal }}</td><td>{{ l.district }}</td>
         <td class="text-muted small mono">{{ l.code }}</td>
         <td>{% if l.is_active %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Inactive</span>{% endif %}</td>
-        {% if can_edit %}
-        <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary"
+        <td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary"
+           href="{{ url_for('pages.location_history', kind=kind, loc_id=l.id) }}">{{ 'History / edit' if can_edit else 'History' }}</a>
+        {% if can_edit %}<button type="button" class="btn btn-sm btn-outline-secondary"
            data-patch="{{ url_for('api_admin.update_location', kind=kind, loc_id=l.id) }}"
-           data-json='{"is_active": {{ 'false' if l.is_active else 'true' }}}'>{{ 'Deactivate' if l.is_active else 'Activate' }}</button></td>
-        {% endif %}</tr>
+           data-json='{"is_active": {{ 'false' if l.is_active else 'true' }}}'>{{ 'Deactivate' if l.is_active else 'Activate' }}</button>{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
@@ -24,8 +24,8 @@
 {% block heading %}{{ 'MLS and FPS locations' if can_edit else 'Shop directory (read-only)' }}{% endblock %}
 {% block content %}
 <div class="alert alert-secondary small">
-  <strong>Shop codes protect shop identity.</strong> MLS operators see only the destination FPS's shop code; FPS operators see nothing
-  about the origin MLS. The real name, village, mandal and district are visible only to administrators and auditors.
+  <strong>Only administrators and auditors see this mapping.</strong> MLS and FPS operators see their own shop and the consignment
+  reference only: nothing about the other shop, not even its shop code. The real name, village, mandal and district are visible only to administrators and auditors.
   The ledger ID is the internal identifier used on the blockchain and in Fabric certificates; it is never shown to operators.
 </div>
 <div class="row g-3">
