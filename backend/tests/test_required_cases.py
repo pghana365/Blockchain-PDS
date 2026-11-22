@@ -31,7 +31,11 @@ def test_02_unauthorized_users_cannot_dispatch(app, clients, bag, ledger):
     assert anon.post(f"/api/bags/{bag}/dispatch", json={"weight_kg": "50"}).status_code == 401
     for who in ("fps1", "fps2", "auditor", "admin"):
         assert dispatch(clients, bag, "50", who).status_code == 403, who
-    assert dispatch(clients, bag, "50", "mls2").status_code == 403   # MLS operator of ANOTHER location
+    # MLS operator of ANOTHER location: rejected exactly like a bag that does not exist (no existence oracle)
+    foreign, missing = dispatch(clients, bag, "50", "mls2"), dispatch(clients, "BAG-8888", "50", "mls2")
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.get_json()["code"] == missing.get_json()["code"] == "BAG_NOT_FOUND"
+    assert foreign.get_json()["error"].replace(bag, "X") == missing.get_json()["error"].replace("BAG-8888", "X")
     assert DispatchRecord.query.count() == 0
     assert Bag.query.one().status == "REGISTERED"
     assert not [c for c in ledger.calls if c["function"] == "DispatchBag"]
@@ -108,7 +112,9 @@ def test_07_difference_beyond_tolerance_gives_flagged(app, clients, bag):
 def test_08_fps_cannot_receive_bag_assigned_to_another_fps(app, clients, bag, ledger):
     dispatch(clients, bag, "50.5")
     r = receive(clients, bag, "50.5", who="fps2")
-    assert r.status_code == 403
+    missing = receive(clients, "BAG-8888", "50.5", who="fps2")
+    assert r.status_code == missing.status_code == 404           # indistinguishable from a missing bag
+    assert r.get_json()["error"].replace(bag, "X") == missing.get_json()["error"].replace("BAG-8888", "X")
     assert ReceiptRecord.query.count() == 0
     assert clients["fps2"].get(f"/api/bags/{bag}").status_code == 404       # not even visible
     assert clients["fps2"].get(f"/b/{bag}").status_code == 404

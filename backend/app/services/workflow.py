@@ -32,6 +32,7 @@ from . import audit
 from .ledger import (COMMITTED, FAILED, UNKNOWN, LedgerError, TxResult, chain_submit, commitment, fmt_weight,
                      get_ledger, new_request_id, new_salt, submit_tx, tx_status)
 from .settings import TOLERANCE_KEY, get_tolerance
+from ..utils.shop_codes import new_consignment_reference
 
 BAG_ID_RE = re.compile(r"^BAG-\d{4,}$")
 FLAG_MESSAGE = ("Discrepancy flagged: this requires further verification. "
@@ -81,10 +82,16 @@ def reconcile_weights(dispatch_w: Decimal, receipt_w: Decimal, tolerance: Decima
     return diff, (STATUS_MATCHED if diff <= Decimal(tolerance) else STATUS_FLAGGED)
 
 
+def _not_found(bag_id):
+    """Same status, code and text for 'does not exist' and 'belongs to another location', so an
+    operator cannot probe which bag ids exist elsewhere (and from that, where they go)."""
+    return WorkflowError(f"Bag {bag_id} not found or not associated with your location", 404, "BAG_NOT_FOUND")
+
+
 def _locked_bag(bag_id: str) -> Bag:
     bag = Bag.query.filter_by(bag_id=bag_id).with_for_update().one_or_none()
     if bag is None:
-        raise WorkflowError(f"Bag {bag_id} does not exist", 404, "BAG_NOT_FOUND")
+        raise _not_found(bag_id)
     return bag
 
 
@@ -329,12 +336,22 @@ def _lock_bag_id_allocator():
         raise WorkflowError("Application settings are not initialized", 500, "SETTINGS_NOT_INITIALIZED")
 
 
+def _neutral_consignment_code():
+    """Random ledger consignment id (no date, route or shop code); retried on the rare collision."""
+    for _ in range(10):
+        code = "CONS-" + new_consignment_reference()[4:]
+        if not Consignment.query.filter_by(code=code).first():
+            return code
+    raise WorkflowError("Could not allocate a consignment id; please retry", 503, "RETRY")
+
+
 def _prepare_register(admin, mls, fps, bag_id, commodity, consignment_code):
     """Persist one registration intent without contacting Fabric."""
     if Bag.query.filter_by(bag_id=bag_id).first():
         raise WorkflowError(f"{bag_id} is already registered", 409, "DUPLICATE_BAG")
 
-    code = (consignment_code or f"CONS-{utcnow():%Y%m%d}-{mls.code}-{fps.code}").strip().upper()
+    # The consignment id goes on the ledger, so the default must not encode the route or a shop code.
+    code = (consignment_code or _neutral_consignment_code()).strip().upper()
     if not re.match(r"^[A-Z0-9-]{3,40}$", code):
         raise WorkflowError("Consignment ID: 3-40 characters A-Z, 0-9, '-'", 400, "INVALID_INPUT")
     cons = Consignment.query.filter_by(code=code).first()
@@ -397,6 +414,7 @@ def register_bags(admin, mls_id, fps_id, count, commodity="Rice", consignment_co
     mls, fps, commodity, consignment_code = _validate_register_request(
         admin, mls_id, fps_id, commodity, consignment_code)
     _lock_bag_id_allocator()
+    consignment_code = consignment_code or _neutral_consignment_code()   # one consignment for the batch
     prepared = []
     for _ in range(count):
         prepared.append(_prepare_register(admin, mls, fps, next_bag_id(locked=True), commodity, consignment_code))
@@ -438,7 +456,7 @@ def dispatch_bag(user, bag_id, weight_raw):
     _need_identity(user)
     bag = _locked_bag(bag_id)
     if bag.mls_id != user.mls_location_id:
-        raise WorkflowError("This bag does not belong to your MLS location", 403, "WRONG_LOCATION")
+        raise _not_found(bag_id)       # same answer as a non-existent bag: no existence oracle
     bag = _block_if_pending(bag_id)
     already = db.session.query(DispatchRecord.id).filter_by(bag_pk=bag.id).first()
     if already or bag.status != STATUS_REGISTERED:
@@ -473,7 +491,7 @@ def receive_bag(user, bag_id, weight_raw):
     _need_identity(user)
     bag = _locked_bag(bag_id)
     if bag.fps_id != user.fps_location_id:
-        raise WorkflowError("This bag is not assigned to your FPS", 403, "WRONG_LOCATION")
+        raise _not_found(bag_id)
     bag = _block_if_pending(bag_id)
     if db.session.query(ReceiptRecord.id).filter_by(bag_pk=bag.id).first():
         raise WorkflowError(f"A receipt for {bag_id} has already been submitted", 409, "ALREADY_RECEIVED")

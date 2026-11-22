@@ -9,6 +9,7 @@ from ..services import audit, settings, workflow
 from ..services.ledger import LedgerError, chain_submit, get_ledger, new_request_id
 from ..services.serializers import bag_view
 from ..utils import validators as v
+from ..utils.shop_codes import new_fps_code, new_mls_code
 from .common import api_guard, json_body
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api/admin")
@@ -149,12 +150,25 @@ def create_location():
     code = v.validate_location_code(kind, d.get("code"))
     if model.query.filter_by(code=code).first():
         raise workflow.WorkflowError(f"{code} already exists", 409, "DUPLICATE_LOCATION")
-    loc = model(code=code, name=v.clean_text(d.get("name"), "Name", 2, 120),
-                district=v.clean_text(d.get("district"), "District", 2, 80))
+    name = v.clean_text(d.get("name"), "Name", 2, 120)
+    mandal = v.clean_text(d.get("mandal"), "Mandal", 2, 80)
+    district = v.clean_text(d.get("district"), "District", 2, 80)
+    extra = {}
+    if kind == "FPS" and (d.get("village") or "").strip():
+        extra["village"] = v.clean_text(d.get("village"), "Village / area", 2, 120)
+    new_code = new_mls_code if kind == "MLS" else new_fps_code
+    for _ in range(10):                 # shop code is random + UNIQUE: retry on the rare collision
+        shop_code = new_code()
+        if not model.query.filter_by(shop_code=shop_code).first():
+            break
+    else:
+        raise workflow.WorkflowError("Could not allocate a shop code; please retry", 503, "RETRY")
+    loc = model(code=code, shop_code=shop_code, name=name, mandal=mandal, district=district, **extra)
     db.session.add(loc)
-    audit.log("LOCATION_CREATED", current_user, kind.lower(), code, {"name": loc.name})
+    audit.log("LOCATION_CREATED", current_user, kind.lower(), code, {"name": loc.name, "shop_code": shop_code})
     db.session.commit()
-    return jsonify(id=loc.id, code=loc.code, name=loc.name, district=loc.district), 201
+    return jsonify(id=loc.id, code=loc.code, shop_code=loc.shop_code, name=loc.name, mandal=loc.mandal,
+                   district=loc.district, village=getattr(loc, "village", None)), 201
 
 
 @bp.patch("/locations/<kind>/<int:loc_id>")
@@ -171,9 +185,17 @@ def update_location(kind, loc_id):
         loc.is_active = bool(d["is_active"])
     if "name" in d:
         loc.name = v.clean_text(d["name"], "Name", 2, 120)
-    audit.log("LOCATION_UPDATED", current_user, kind.lower(), loc.code, {k: d[k] for k in ("is_active", "name") if k in d})
+    if "district" in d:
+        loc.district = v.clean_text(d["district"], "District", 2, 80)
+    if "mandal" in d:
+        loc.mandal = v.clean_text(d["mandal"], "Mandal", 2, 80)
+    if kind == "FPS" and "village" in d:
+        loc.village = v.clean_text(d["village"], "Village / area", 2, 120) if (d["village"] or "").strip() else None
+    # shop_code and the internal ledger id are permanent: they are never accepted from the client
+    audit.log("LOCATION_UPDATED", current_user, kind.lower(), loc.code,
+              {k: d[k] for k in ("is_active", "name", "mandal", "village", "district") if k in d})
     db.session.commit()
-    return jsonify(id=loc.id, code=loc.code, is_active=loc.is_active)
+    return jsonify(id=loc.id, code=loc.code, shop_code=loc.shop_code, is_active=loc.is_active)
 
 
 @bp.post("/bags")

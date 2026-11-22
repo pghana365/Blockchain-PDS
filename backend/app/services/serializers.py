@@ -15,16 +15,33 @@ def iso(dt):
     return dt.isoformat(timespec="seconds") + "Z" if dt else None
 
 
+def _shop(loc, level):
+    """What a viewer may know about one shop.
+    full -> admin/auditor: shop code, internal ledger id, real name and district
+    own  -> the operator's own shop: shop code, real name and district
+    code -> the other party, MLS viewing the destination: the random shop code only"""
+    if level not in ("full", "own"):
+        return {"shop_code": loc.shop_code}
+    view = {"shop_code": loc.shop_code, "name": loc.name, "mandal": loc.mandal, "district": loc.district,
+            "area": loc.area}
+    if hasattr(loc, "village"):
+        view["village"] = loc.village
+    if level == "full":
+        view["ledger_id"] = loc.code
+    return view
+
+
 def bag_view(user, bag, with_transactions=True):
+    """Everything is an allow-list per role. Fields an operator may not see are never put in
+    the dict, so no template, JSON response or browser tool can reveal them."""
     has_dispatch = access.has_dispatch(bag)
     has_receipt = access.has_receipt(bag)
     pending_ops = BlockchainTransaction.query.filter_by(bag_pk=bag.id, status="PENDING").all()
+    privileged = bool(user.is_admin or user.is_auditor)
     v = {
         "bag_id": bag.bag_id,
         "commodity": bag.commodity,
-        "consignment_id": bag.consignment.code,
-        "origin_mls": {"code": bag.mls.code, "name": bag.mls.name},
-        "destination_fps": {"code": bag.fps.code, "name": bag.fps.name},
+        "consignment_ref": bag.consignment.reference,
         "status": bag.status,
         "registered_at": iso(bag.created_at),
         "register_tx_id": bag.register_tx_id,
@@ -38,21 +55,30 @@ def bag_view(user, bag, with_transactions=True):
         # An earlier operation was sent to the blockchain but is not confirmed yet (no weights in here).
         "pending": [{"operation": o.function, "since": iso(o.created_at)} for o in pending_ops],
     }
+    if privileged:
+        v["consignment_id"] = bag.consignment.code          # ledger id; may encode the route
+        v["origin_mls"] = _shop(bag.mls, "full")
+        v["destination_fps"] = _shop(bag.fps, "full")
+    elif user.is_mls:
+        v["origin_mls"] = _shop(bag.mls, "own")
+        v["destination_fps"] = _shop(bag.fps, "code")      # destination: random code only
+    elif user.is_fps:
+        v["destination_fps"] = _shop(bag.fps, "own")       # origin: nothing at all, not even a code
 
     d = access.visible_dispatch(user, bag)
     if d:
-        v["dispatch"] = {
-            "weight_kg": fmt_weight(d.weight_kg), "dispatched_at": iso(d.dispatched_at),
-            "operator": d.operator.full_name, "operator_username": d.operator.username,
-            "mls": d.mls.code, "tx_id": d.tx_id, "commitment": d.commitment,
-        }
+        v["dispatch"] = {"weight_kg": fmt_weight(d.weight_kg), "dispatched_at": iso(d.dispatched_at),
+                         "tx_id": d.tx_id, "commitment": d.commitment}
+        if privileged or user.is_mls:                        # the dispatcher's identity is MLS-side information
+            v["dispatch"].update(operator=d.operator.full_name, operator_username=d.operator.username,
+                                 shop=d.mls.shop_code)
     r = access.visible_receipt(user, bag)
     if r:
-        v["receipt"] = {
-            "weight_kg": fmt_weight(r.weight_kg), "received_at": iso(r.received_at),
-            "operator": r.operator.full_name, "operator_username": r.operator.username,
-            "fps": r.fps.code, "tx_id": r.tx_id, "commitment": r.commitment,
-        }
+        v["receipt"] = {"weight_kg": fmt_weight(r.weight_kg), "received_at": iso(r.received_at),
+                        "tx_id": r.tx_id, "commitment": r.commitment}
+        if privileged or user.is_fps:                        # the receiver's identity is FPS-side information
+            v["receipt"].update(operator=r.operator.full_name, operator_username=r.operator.username,
+                                shop=r.fps.shop_code)
     c = access.visible_reconciliation(user, bag)
     if c:
         v["reconciliation"] = {

@@ -69,10 +69,11 @@ class User(UserMixin, db.Model):
 
     @property
     def location_label(self) -> str:
+        # an operator's OWN shop identity (shop code + real name) - never the internal ledger id
         if self.is_mls and self.mls_location:
-            return f"{self.mls_location.code} - {self.mls_location.name}"
+            return f"{self.mls_location.shop_code} - {self.mls_location.name}"
         if self.is_fps and self.fps_location:
-            return f"{self.fps_location.code} - {self.fps_location.name}"
+            return f"{self.fps_location.shop_code} - {self.fps_location.name}"
         return "All locations (system-wide)"
 
     def __repr__(self):

@@ -29,9 +29,9 @@
     {# ---------------- action panels ---------------- #}
     {% if bag.can_dispatch %}
     <div class="card mb-3 border-primary">
-      <div class="card-header">Dispatch this bag from {{ bag.origin_mls.code }}</div>
+      <div class="card-header">Dispatch this bag from {{ bag.origin_mls.shop_code }}</div>
       <div class="card-body">
-        <p class="text-muted mb-3">Weigh the full bag (rice + jute bag) and enter the <strong>gross weight in kg</strong>. Destination: <strong>{{ bag.destination_fps.code }} - {{ bag.destination_fps.name }}</strong>.</p>
+        <p class="text-muted mb-3">Weigh the full bag (rice + jute bag) and enter the <strong>gross weight in kg</strong>. Destination shop code: <strong class="mono">{{ bag.destination_fps.shop_code }}</strong>.</p>
         <form id="weight-form" data-kind="dispatch" novalidate>
           <label class="form-label" for="weight-kg">Gross weight (kg)</label>
           <div class="d-flex flex-wrap gap-3 align-items-center">
@@ -46,7 +46,7 @@
 
     {% if bag.can_receive %}
     <div class="card mb-3 border-primary">
-      <div class="card-header">Receive this bag at {{ bag.destination_fps.code }}</div>
+      <div class="card-header">Receive this bag at {{ bag.destination_fps.shop_code }}</div>
       <div class="card-body">
         <div class="blind-note mb-3"><strong>Blind verification.</strong> Weigh the bag yourself and enter what <em>your scale</em> shows. The dispatch weight is intentionally hidden until you submit, so the two measurements stay independent.</div>
         <form id="weight-form" data-kind="receive" novalidate>
@@ -97,8 +97,10 @@
         <div class="card-body"><dl class="kv">
           <dt>Gross weight</dt><dd class="fw-bold">{{ bag.dispatch.weight_kg }} kg</dd>
           <dt>Dispatched at</dt><dd>{{ bag.dispatch.dispatched_at|dt }}</dd>
+          {% if bag.dispatch.operator %}
           <dt>Operator</dt><dd>{{ bag.dispatch.operator }} <span class="text-muted">({{ bag.dispatch.operator_username }})</span></dd>
-          <dt>MLS</dt><dd>{{ bag.dispatch.mls }}</dd>
+          <dt>MLS</dt><dd class="mono">{{ bag.dispatch.shop }}</dd>
+          {% endif %}
           <dt>Transaction ID</dt><dd>{{ txid(bag.dispatch.tx_id) }}</dd>
         </dl></div>
       </div></div>
@@ -113,8 +115,10 @@
         <div class="card-body"><dl class="kv">
           <dt>Gross weight</dt><dd class="fw-bold">{{ bag.receipt.weight_kg }} kg</dd>
           <dt>Received at</dt><dd>{{ bag.receipt.received_at|dt }}</dd>
+          {% if bag.receipt.operator %}
           <dt>Operator</dt><dd>{{ bag.receipt.operator }} <span class="text-muted">({{ bag.receipt.operator_username }})</span></dd>
-          <dt>FPS</dt><dd>{{ bag.receipt.fps }}</dd>
+          <dt>FPS</dt><dd class="mono">{{ bag.receipt.shop }}</dd>
+          {% endif %}
           <dt>Transaction ID</dt><dd>{{ txid(bag.receipt.tx_id) }}</dd>
         </dl></div>
       </div></div>
@@ -178,9 +182,14 @@
         <dl class="kv">
           <dt>Bag ID</dt><dd class="fw-bold">{{ bag.bag_id }}</dd>
           <dt>Commodity</dt><dd>{{ bag.commodity }}</dd>
-          <dt>Consignment</dt><dd>{{ bag.consignment_id }}</dd>
-          <dt>Origin MLS</dt><dd>{{ bag.origin_mls.code }}<br><span class="text-muted small">{{ bag.origin_mls.name }}</span></dd>
-          <dt>Destination FPS</dt><dd>{{ bag.destination_fps.code }}<br><span class="text-muted small">{{ bag.destination_fps.name }}</span></dd>
+          <dt>Consignment ref.</dt><dd class="mono">{{ bag.consignment_ref }}</dd>
+          {% if bag.consignment_id %}<dt>Ledger consignment</dt><dd class="mono small">{{ bag.consignment_id }}</dd>{% endif %}
+          {# only the shops this viewer may know about are in the view at all #}
+          {% for label, s in [('Origin MLS', bag.origin_mls), ('Destination FPS', bag.destination_fps)] if s %}
+          <dt>{{ label }}</dt><dd><span class="mono">{{ s.shop_code }}</span>
+            {% if s.name %}<br><span class="text-muted small">{{ s.name }}<br>{{ s.area }}</span>{% endif %}
+            {% if s.ledger_id %}<br><span class="text-muted small">Ledger ID {{ s.ledger_id }}</span>{% endif %}</dd>
+          {% endfor %}
           <dt>Status</dt><dd>{{ badge(bag.status) }}</dd>
           <dt>Registered</dt><dd>{{ bag.registered_at|dt }}</dd>
           <dt>Register tx</dt><dd>{{ txid(bag.register_tx_id) }}</dd>

@@ -1,6 +1,6 @@
 # Blockchain-Based Blind Weight Verification for the Public Distribution System
 
-Tracks individual rice bags from **Mandala Level Stock (MLS) -> Fair Price Shop (FPS)**.
+Tracks individual rice bags from **Mandal Level Stock point (MLS, one per mandal) -> Fair Price Shop (FPS, a village or ward ration shop)**.
 Each bag has one permanent QR code. The MLS records the gross weight at dispatch; the FPS independently records its own gross
 weight **without being able to see the MLS weight**; the system then reconciles the two against an admin-configurable tolerance
 (initially 0.2 kg) and writes an auditable trail to a **Hyperledger Fabric** blockchain.

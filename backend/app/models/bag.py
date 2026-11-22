@@ -1,4 +1,5 @@
 from ..extensions import db
+from ..utils.shop_codes import new_consignment_reference
 from .constants import STATUS_REGISTERED, utcnow
 
 
@@ -6,7 +7,9 @@ class Consignment(db.Model):
     __tablename__ = "consignments"
 
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(40), nullable=False, unique=True)
+    code = db.Column(db.String(40), nullable=False, unique=True)   # ledger consignment id (admin/auditor only)
+    # neutral reference for operators: random, no date / route / shop code in it
+    reference = db.Column(db.String(16), nullable=False, unique=True, default=new_consignment_reference)
     mls_id = db.Column(db.Integer, db.ForeignKey("mls_locations.id"), nullable=False, index=True)
     fps_id = db.Column(db.Integer, db.ForeignKey("fps_locations.id"), nullable=False, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)

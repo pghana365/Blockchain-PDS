@@ -8,7 +8,7 @@ ALL_ROLES = (ROLE_ADMIN, ROLE_MLS, ROLE_FPS, ROLE_AUDITOR)
 
 ROLE_DESCRIPTIONS = {
     ROLE_ADMIN: "Administrator - manages users, locations, bags and settings",
-    ROLE_MLS: "Mandala Level Stock operator - weighs and dispatches bags",
+    ROLE_MLS: "Mandal Level Stock operator - weighs and dispatches bags",
     ROLE_FPS: "Fair Price Shop operator - independently weighs and receives bags",
     ROLE_AUDITOR: "Auditor - read-only access to records and history",
 }

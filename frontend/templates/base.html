@@ -30,6 +30,9 @@
         <a class="nav-item {{ 'active' if ep == 'pages.discrepancies' }}" href="{{ url_for('pages.discrepancies') }}">Discrepancy report</a>
         <a class="nav-item {{ 'active' if ep == 'pages.transactions' }}" href="{{ url_for('pages.transactions') }}">Transaction history</a>
         <a class="nav-item {{ 'active' if ep == 'pages.audit_logs' }}" href="{{ url_for('pages.audit_logs') }}">Audit log</a>
+        {% if current_user.is_auditor %}
+        <a class="nav-item {{ 'active' if ep == 'pages.admin_locations' }}" href="{{ url_for('pages.admin_locations') }}">Shop directory</a>
+        {% endif %}
       {% endif %}
     </nav>
     <div class="user-box">

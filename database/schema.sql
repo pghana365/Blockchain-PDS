@@ -14,23 +14,30 @@ CREATE TABLE audit_chain_head (
 CREATE TABLE fps_locations (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	code VARCHAR(16) NOT NULL, 
+	shop_code VARCHAR(16) NOT NULL, 
 	name VARCHAR(120) NOT NULL, 
+	village VARCHAR(120), 
+	mandal VARCHAR(80) NOT NULL, 
 	district VARCHAR(80) NOT NULL, 
 	is_active BOOL NOT NULL, 
 	created_at DATETIME NOT NULL, 
 	PRIMARY KEY (id), 
-	UNIQUE (code)
+	UNIQUE (code), 
+	UNIQUE (shop_code)
 );
 
 CREATE TABLE mls_locations (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	code VARCHAR(16) NOT NULL, 
+	shop_code VARCHAR(16) NOT NULL, 
 	name VARCHAR(120) NOT NULL, 
+	mandal VARCHAR(80) NOT NULL, 
 	district VARCHAR(80) NOT NULL, 
 	is_active BOOL NOT NULL, 
 	created_at DATETIME NOT NULL, 
 	PRIMARY KEY (id), 
-	UNIQUE (code)
+	UNIQUE (code), 
+	UNIQUE (shop_code)
 );
 
 CREATE TABLE roles (
@@ -89,12 +96,14 @@ CREATE INDEX ix_audit_logs_user_id ON audit_logs (user_id);
 CREATE TABLE consignments (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	code VARCHAR(40) NOT NULL, 
+	reference VARCHAR(16) NOT NULL, 
 	mls_id INTEGER NOT NULL, 
 	fps_id INTEGER NOT NULL, 
 	created_by INTEGER NOT NULL, 
 	created_at DATETIME NOT NULL, 
 	PRIMARY KEY (id), 
 	UNIQUE (code), 
+	UNIQUE (reference), 
 	FOREIGN KEY(mls_id) REFERENCES mls_locations (id), 
 	FOREIGN KEY(fps_id) REFERENCES fps_locations (id), 
 	FOREIGN KEY(created_by) REFERENCES users (id)

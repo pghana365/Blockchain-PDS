@@ -10,17 +10,20 @@ from .models.constants import (ALL_ROLES, ROLE_ADMIN, ROLE_AUDITOR, ROLE_DESCRIP
 from .services import audit, settings, workflow
 from .utils.validators import validate_password
 
-MLS = [("MLS-01", "Mandala Level Stock - Nalgonda", "Nalgonda"),
-       ("MLS-02", "Mandala Level Stock - Suryapet", "Suryapet")]
-FPS = [("FPS-01", "Fair Price Shop 0123 - Miryalaguda", "Nalgonda"),
-       ("FPS-02", "Fair Price Shop 0456 - Kodad", "Suryapet")]
+# code, name, mandal, district - one MLS point per mandal
+MLS = [("MLS-01", "MLS Point - Miryalaguda", "Miryalaguda", "Nalgonda"),
+       ("MLS-02", "MLS Point - Kodad", "Kodad", "Suryapet")]
+# code, name, village, mandal, district - each FPS is supplied by the MLS point of its mandal
+FPS = [("FPS-01", "Fair Price Shop 0123 - Avanthipuram", "Avanthipuram", "Miryalaguda", "Nalgonda"),
+       ("FPS-02", "Fair Price Shop 0456 - Komarabanda", "Komarabanda", "Kodad", "Suryapet")]
 # username, full name, role, MLS code, FPS code, fabric identity
 USERS = [
     ("admin", "System Administrator", ROLE_ADMIN, None, None, "pdsadmin"),
-    ("mls01.operator", "Ravi Kumar (MLS-01)", ROLE_MLS, "MLS-01", None, "mls01op"),
-    ("mls02.operator", "Lakshmi Devi (MLS-02)", ROLE_MLS, "MLS-02", None, "mls02op"),
-    ("fps01.operator", "Suresh Reddy (FPS-01)", ROLE_FPS, None, "FPS-01", "fps01op"),
-    ("fps02.operator", "Anitha Rao (FPS-02)", ROLE_FPS, None, "FPS-02", "fps02op"),
+    # display names carry no location id: operator names can appear on the bag page
+    ("mls01.operator", "Ravi Kumar", ROLE_MLS, "MLS-01", None, "mls01op"),
+    ("mls02.operator", "Lakshmi Devi", ROLE_MLS, "MLS-02", None, "mls02op"),
+    ("fps01.operator", "Suresh Reddy", ROLE_FPS, None, "FPS-01", "fps01op"),
+    ("fps02.operator", "Anitha Rao", ROLE_FPS, None, "FPS-02", "fps02op"),
     ("auditor1", "Meena Iyer (Auditor)", ROLE_AUDITOR, None, None, "auditor1"),
 ]
 
@@ -38,12 +41,12 @@ def register_cli(app):
                 db.session.add(Role(name=name, description=ROLE_DESCRIPTIONS[name]))
         if not db.session.get(Setting, settings.TOLERANCE_KEY):
             db.session.add(Setting(key=settings.TOLERANCE_KEY, value=current_app.config["DEFAULT_TOLERANCE_KG"]))
-        for code, name, dist in MLS:
+        for code, name, mandal, dist in MLS:
             if not MlsLocation.query.filter_by(code=code).first():
-                db.session.add(MlsLocation(code=code, name=name, district=dist))
-        for code, name, dist in FPS:
+                db.session.add(MlsLocation(code=code, name=name, mandal=mandal, district=dist))
+        for code, name, village, mandal, dist in FPS:
             if not FpsLocation.query.filter_by(code=code).first():
-                db.session.add(FpsLocation(code=code, name=name, district=dist))
+                db.session.add(FpsLocation(code=code, name=name, village=village, mandal=mandal, district=dist))
         db.session.flush()
         made = []
         for username, full, role, mls, fps, ident in USERS:

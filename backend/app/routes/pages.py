@@ -112,7 +112,7 @@ def admin_users():
 
 
 @bp.get("/admin/locations")
-@roles_required(ROLE_ADMIN)
+@roles_required(ROLE_ADMIN, ROLE_AUDITOR)     # the code -> real shop mapping; auditor sees it read-only
 def admin_locations():
     return render_template("admin/locations.html", mls=MlsLocation.query.order_by(MlsLocation.code).all(),
                            fps=FpsLocation.query.order_by(FpsLocation.code).all())
