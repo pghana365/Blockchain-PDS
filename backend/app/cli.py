@@ -10,10 +10,10 @@ from .models.constants import (ALL_ROLES, ROLE_ADMIN, ROLE_AUDITOR, ROLE_DESCRIP
 from .services import audit, settings, workflow
 from .utils.validators import validate_password
 
-MLS = [("MLS-01", "Mandala Level Stock - Tirupati Rural", "Tirupati"),
-       ("MLS-02", "Mandala Level Stock - Chittoor", "Chittoor")]
-FPS = [("FPS-01", "Fair Price Shop 0123 - Renigunta", "Tirupati"),
-       ("FPS-02", "Fair Price Shop 0456 - Srikalahasti", "Tirupati")]
+MLS = [("MLS-01", "Mandala Level Stock - Nalgonda", "Nalgonda"),
+       ("MLS-02", "Mandala Level Stock - Suryapet", "Suryapet")]
+FPS = [("FPS-01", "Fair Price Shop 0123 - Miryalaguda", "Nalgonda"),
+       ("FPS-02", "Fair Price Shop 0456 - Kodad", "Suryapet")]
 # username, full name, role, MLS code, FPS code, fabric identity
 USERS = [
     ("admin", "System Administrator", ROLE_ADMIN, None, None, "pdsadmin"),
