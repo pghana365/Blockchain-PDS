@@ -63,6 +63,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -.01em; }
 .status-RECEIVED { color: var(--st-received); background: #eef2f7; border-color: #cbd5e1; }
 .status-MATCHED { color: var(--st-matched); background: #ecfdf3; border-color: #86efac; }
 .status-FLAGGED { color: var(--st-flagged); background: #fef2f2; border-color: #fca5a5; }
+.status-PENDING { color: #475569; background: #f8fafc; border-color: #cbd5e1; }
 
 /* ---------- result panels ---------- */
 .result-panel { border-radius: 12px; padding: 1.2rem 1.4rem; border: 1px solid; }

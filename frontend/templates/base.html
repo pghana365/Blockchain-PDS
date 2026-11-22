@@ -16,6 +16,7 @@
     <nav>
       <div class="nav-label">Main</div>
       <a class="nav-item {{ 'active' if ep == 'pages.dashboard' }}" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
+      <a class="nav-item {{ 'active' if ep in ('pages.consignments', 'pages.consignment_detail') }}" href="{{ url_for('pages.consignments') }}">Consignments</a>
       {% if current_user.is_admin %}
         <div class="nav-label">Administration</div>
         <a class="nav-item {{ 'active' if ep == 'pages.admin_bags' }}" href="{{ url_for('pages.admin_bags') }}">Bags and QR codes</a>

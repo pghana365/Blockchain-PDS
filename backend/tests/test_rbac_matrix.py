@@ -40,6 +40,12 @@ SPEC = {
     "auth.logout": [],                                                     # see test_logout_requires_login
     "pages.dashboard": [("GET", "/dashboard", None, EVERYONE_SIGNED_IN)],
     "pages.scan": [("GET", "/scan", None, EVERYONE_SIGNED_IN)],
+    "pages.consignments": [("GET", "/consignments", None, EVERYONE_SIGNED_IN)],
+    "pages.consignment_detail": [("GET", "/consignments/CNS-NOSUCHREF00", None,
+                                  r(admin=HIDDEN, auditor=HIDDEN, mls1=HIDDEN, fps1=HIDDEN))],
+    "api_ops.list_consignments": [("GET", "/api/consignments", None, EVERYONE_SIGNED_IN)],
+    "api_ops.get_consignments": [("GET", "/api/consignments/CNS-NOSUCHREF00", None,
+                                  r(admin=HIDDEN, auditor=HIDDEN, mls1=HIDDEN, fps1=HIDDEN))],
     "pages.bag_detail": [("GET", f"/b/{OWN}", None, SCOPED_OWN), ("GET", f"/b/{FOREIGN}", None, SCOPED_FOREIGN),
                          ("GET", f"/bags/{OWN}", None, SCOPED_OWN), ("GET", f"/bags/{FOREIGN}", None, SCOPED_FOREIGN)],
     "pages.bag_label": [("GET", f"/admin/bags/{OWN}/label", None, SCOPED_OWN),

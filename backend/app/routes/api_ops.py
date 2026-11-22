@@ -2,18 +2,101 @@ import io
 import re
 
 import qrcode
-from flask import Blueprint, current_app, jsonify, send_file
+from flask import Blueprint, current_app, jsonify, send_file, request
 from flask_login import current_user, login_required
 from qrcode.constants import ERROR_CORRECT_M
 
 from ..middleware.auth import roles_required
 from ..models import Bag
 from ..models.constants import ROLE_FPS, ROLE_MLS
-from ..services import access, workflow
+from ..services import access, reports, workflow
 from ..services.serializers import bag_view
 from .common import api_guard, json_body
 
 bp = Blueprint("api_ops", __name__, url_prefix="/api")
+
+
+def _consignment_iso(value):
+    return value.isoformat(timespec="seconds") + "Z" if value else None
+
+
+def _json_consignment_row(row):
+    out = {
+        "reference": row["reference"],
+        "created_at": _consignment_iso(row["created_at"]),
+        "status": row["status"],
+        "total_bags": row["total"],
+        "dispatched_bags": row["dispatched"],
+        "received_bags": row["received"],
+        "pending_bags": row["pending"],
+        "matched_bags": row["matched"],
+        "flagged_bags": row["flagged"],
+        "first_dispatch_at": _consignment_iso(row["first_dispatch_at"]),
+        "latest_dispatch_at": _consignment_iso(row["dispatch_at"]),
+        "latest_receipt_at": _consignment_iso(row["latest_receipt_at"]),
+    }
+    if row.get("ledger_id"):
+        out["ledger_id"] = row["ledger_id"]
+    if row.get("origin") is not None:
+        out["origin"] = row["origin"]
+    if row.get("destination") is not None:
+        out["destination"] = row["destination"]
+    return out
+
+
+@bp.get("/consignments")
+@login_required
+@api_guard
+def list_consignments():
+    rows = reports.consignments_list(
+        current_user,
+        reference=request.args.get("q"),
+        status=request.args.get("status"),
+        date_from=request.args.get("date_from"),
+        date_to=request.args.get("date_to"),
+        mls_id=request.args.get("mls_id"),
+        fps_id=request.args.get("fps_id"),
+    )
+    return jsonify(
+        consignments=[_json_consignment_row(row) for row in rows],
+        summary=reports.consignment_dashboard_summary(current_user),
+    )
+
+
+@bp.get("/consignments/<reference>")
+@login_required
+@api_guard
+def get_consignments(reference):
+    detail = reports.consignment_detail(current_user, reference)
+    if detail is None:
+        raise workflow.WorkflowError("Consignment not found or not associated with your location",
+                                     404, "CONSIGNMENT_NOT_FOUND")
+
+    summary = dict(detail["summary"])
+    summary["dispatch_at"] = _consignment_iso(summary["dispatch_at"])
+    summary["first_dispatch_at"] = _consignment_iso(summary["first_dispatch_at"])
+    summary["latest_receipt_at"] = _consignment_iso(summary["latest_receipt_at"])
+    bags = []
+    for bag in detail["bags"]:
+        for key in ("dispatch", "receipt"):
+            if bag[key]:
+                bag[key] = dict(bag[key])
+                bag[key]["dispatched_at"] = _consignment_iso(bag[key].get("dispatched_at"))
+                bag[key]["received_at"] = _consignment_iso(bag[key].get("received_at"))
+        bags.append(bag)
+    out = dict(
+        reference=detail["reference"],
+        created_at=_consignment_iso(detail["created_at"]),
+        summary=summary,
+        bags=bags,
+    )
+    if detail.get("ledger_id"):
+        out["ledger_id"] = detail["ledger_id"]
+    if detail.get("origin") is not None:
+        out["origin"] = detail["origin"]
+    if detail.get("destination") is not None:
+        out["destination"] = detail["destination"]
+    return jsonify(out)
 
 
 def _bag_or_404(bag_id):

@@ -28,7 +28,8 @@ def dashboard():
     if u.is_admin:
         return render_template("admin/dashboard.html", stats=reports.admin_stats(),
                                recent=reports.audit_rows(limit=8), flagged=reports.discrepancy_rows(u)[:5],
-                               tolerance=settings.get_tolerance())
+                               tolerance=settings.get_tolerance(),
+                               consignment_stats=reports.consignment_dashboard_summary(u))
     if u.is_mls:
         rows = reports.mls_rows(u, request.args.get("status") or None)
         return render_template("mls/dashboard.html", rows=rows, counts=reports.mls_counts(u), statuses=BAG_STATUSES,
@@ -39,7 +40,8 @@ def dashboard():
         q, status = request.args.get("q", "").strip(), request.args.get("status", "")
         return render_template("auditor/dashboard.html", stats=reports.admin_stats(),
                                rows=reports.audit_rows(q or None, status or None), q=q, sel_status=status,
-                               statuses=BAG_STATUSES, integrity=audit.verify_chain())
+                               statuses=BAG_STATUSES, integrity=audit.verify_chain(),
+                               consignment_stats=reports.consignment_dashboard_summary(u))
     return forbidden()
 
 
@@ -130,6 +132,49 @@ def admin_bags():
                            fps=FpsLocation.query.filter_by(is_active=True).order_by(FpsLocation.code).all(),
                            consignments=Consignment.query.order_by(Consignment.id.desc()).limit(200).all(),
                            commodities=COMMODITIES, next_id=workflow.next_bag_id())
+
+
+@bp.get("/consignments")
+@login_required
+def consignments():
+    u = current_user
+    rows = reports.consignments_list(
+        u,
+        reference=request.args.get("q"),
+        status=request.args.get("status"),
+        date_from=request.args.get("date_from"),
+        date_to=request.args.get("date_to"),
+        mls_id=request.args.get("mls_id"),
+        fps_id=request.args.get("fps_id"),
+    )
+    context = {
+        "rows": rows,
+        "summary": reports.consignment_dashboard_summary(u),
+        "q": request.args.get("q", "").strip(),
+        "sel_status": request.args.get("status", "").strip().upper(),
+        "date_from": request.args.get("date_from", "").strip(),
+        "date_to": request.args.get("date_to", "").strip(),
+        "statuses": reports.DERIVED_CONSIGNMENT_STATUSES,
+    }
+    if u.is_admin or u.is_auditor:
+        context["mls_locations"] = MlsLocation.query.order_by(MlsLocation.code).all()
+        context["fps_locations"] = FpsLocation.query.order_by(FpsLocation.code).all()
+        context["sel_mls"] = request.args.get("mls_id", "")
+        context["sel_fps"] = request.args.get("fps_id", "")
+    return render_template("consignments.html", **context)
+
+
+@bp.get("/consignments/<reference>")
+@login_required
+def consignment_detail(reference):
+    detail = reports.consignment_detail(current_user, reference)
+    if detail is None:
+        audit.log("CONSIGNMENT_VIEW_DENIED", current_user, "consignment", reference,
+                  {"role": current_user.role_name}, commit=True)
+        return render_template("error.html", code=404,
+                               message="Consignment not found or not associated with your location."), 404
+    audit.log("CONSIGNMENT_VIEWED", current_user, "consignment", detail["reference"], commit=True)
+    return render_template("consignment_detail.html", consignment=detail)
 
 
 @bp.get("/admin/locations/<kind>/<int:loc_id>/history")

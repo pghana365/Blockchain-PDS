@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, kg %}
+{% block heading %}Consignment {{ consignment.reference }}{% endblock %}
+{% block actions %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.consignments') }}">All consignments</a>{% endblock %}
+{% block content %}
+{% set s = consignment.summary %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card"><div class="label">Total bags</div><div class="value">{{ s.total }}</div></div></div>
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card"><div class="label">Dispatched</div><div class="value">{{ s.dispatched }}</div></div></div>
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card"><div class="label">Received</div><div class="value">{{ s.received }}</div></div></div>
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card"><div class="label">Pending</div><div class="value">{{ s.pending }}</div></div></div>
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card good"><div class="label">Matched</div><div class="value">{{ s.matched }}</div></div></div>
+  <div class="col-6 col-md-4 col-xl-2"><div class="card stat-card bad"><div class="label">Flagged</div><div class="value">{{ s.flagged }}</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header">Consignment information</div>
+      <div class="card-body"><dl class="kv">
+        <dt>Reference</dt><dd class="mono fw-semibold">{{ consignment.reference }}</dd>
+        {% if consignment.ledger_id %}<dt>Ledger ID</dt><dd class="mono">{{ consignment.ledger_id }}</dd>{% endif %}
+        <dt>Created</dt><dd>{{ consignment.created_at|dt }}</dd>
+        {% if consignment.origin %}<dt>Origin MLS</dt><dd><span class="mono">{{ consignment.origin.shop_code }}</span>{% if consignment.origin.name %}<br><span class="text-muted small">{{ consignment.origin.name }}<br>{{ consignment.origin.area }}</span>{% endif %}{% if consignment.origin.code %}<br><span class="text-muted small">Ledger ID {{ consignment.origin.code }}</span>{% endif %}</dd>{% endif %}
+        {% if consignment.destination %}<dt>Destination FPS</dt><dd><span class="mono">{{ consignment.destination.shop_code }}</span>{% if consignment.destination.name %}<br><span class="text-muted small">{{ consignment.destination.name }}<br>{{ consignment.destination.area }}</span>{% endif %}{% if consignment.destination.code %}<br><span class="text-muted small">Ledger ID {{ consignment.destination.code }}</span>{% endif %}</dd>{% endif %}
+        <dt>Status</dt><dd>{{ badge(s.status) }}</dd>
+      </dl></div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header">Lifecycle</div>
+      <div class="card-body">
+        <ul class="timeline">
+          <li><strong>REGISTERED</strong><div class="small text-muted">{{ consignment.created_at|dt }}</div></li>
+          <li><strong>IN_TRANSIT</strong><div class="small text-muted">{{ s.first_dispatch_at|dt if s.first_dispatch_at else 'No confirmed dispatch yet' }}</div></li>
+          <li><strong>RECEIVED</strong><div class="small text-muted">{{ s.latest_receipt_at|dt if s.latest_receipt_at else 'No confirmed receipt yet' }}</div></li>
+          <li><strong>{{ 'FLAGGED' if s.status == 'FLAGGED' else ('MATCHED' if s.status == 'MATCHED' else 'MATCHED / FLAGGED') }}</strong><div class="small text-muted">Reconciliation result</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between"><span>Bag tracking</span><span class="text-muted small">Dispatch / receipt / reconciliation</span></div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Bag ID</th><th>Status</th><th>Dispatch weight</th><th>Dispatch time</th><th>Receiving weight</th><th>Receipt time</th><th>Difference</th><th>Reconciliation</th><th></th></tr></thead>
+      <tbody>
+      {% for bag in consignment.bags %}
+        <tr>
+          <td><span class="mono fw-semibold">{{ bag.bag_id }}</span></td>
+          <td>{{ badge(bag.status) }}</td>
+          <td>{{ kg(bag.dispatch.weight_kg) if bag.dispatch else '-' }}</td>
+          <td class="small">{{ bag.dispatch.dispatched_at|dt if bag.dispatch else '-' }}</td>
+          <td>{{ kg(bag.receipt.weight_kg) if bag.receipt else '-' }}</td>
+          <td class="small">{{ bag.receipt.received_at|dt if bag.receipt else '-' }}</td>
+          <td>{{ kg(bag.difference_kg) if bag.difference_kg else '-' }}</td>
+          <td>{% if bag.reconciliation_status %}{{ badge(bag.reconciliation_status) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('pages.bag_detail', bag_id=bag.bag_id) }}">Open</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No bags are registered under this consignment.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, stat %}
+{% block heading %}Consignment management{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  {{ stat('Total consignments', summary.total) }}
+  {{ stat('In transit', summary.in_transit) }}
+  {{ stat('Fully received', summary.fully_received, 'good') }}
+  {{ stat('Pending', summary.pending) }}
+  {{ stat('Flagged', summary.flagged, 'bad') }}
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">Search and filters</div>
+  <div class="card-body">
+    <form method="get" class="row g-2">
+      <div class="col-md-3"><label class="form-label small">Consignment reference</label><input name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="CNS-" maxlength="40"></div>
+      <div class="col-md-2"><label class="form-label small">Status</label><select name="status" class="form-select form-select-sm"><option value="">All statuses</option>{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == sel_status }}>{{ s }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label small">From date</label><input name="date_from" type="date" value="{{ date_from }}" class="form-control form-control-sm"></div>
+      <div class="col-md-2"><label class="form-label small">To date</label><input name="date_to" type="date" value="{{ date_to }}" class="form-control form-control-sm"></div>
+      {% if current_user.is_admin or current_user.is_auditor %}
+      <div class="col-md-3"><label class="form-label small">Origin MLS</label><select name="mls_id" class="form-select form-select-sm"><option value="">All MLS</option>{% for loc in mls_locations %}<option value="{{ loc.id }}" {{ 'selected' if sel_mls == loc.id|string }}>{{ loc.code }} - {{ loc.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small">Destination FPS</label><select name="fps_id" class="form-select form-select-sm"><option value="">All FPS</option>{% for loc in fps_locations %}<option value="{{ loc.id }}" {{ 'selected' if sel_fps == loc.id|string }}>{{ loc.code }} - {{ loc.name }}</option>{% endfor %}</select></div>
+      {% endif %}
+      <div class="col-md-2 d-flex align-items-end"><button class="btn btn-sm btn-primary w-100" type="submit">Apply</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between"><span>Consignments</span><span class="text-muted small">{{ rows|length }} result(s)</span></div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Reference</th>{% if current_user.is_admin or current_user.is_auditor %}<th>Origin</th><th>Destination</th>{% endif %}<th>Bags</th><th>Dispatched</th><th>Received</th><th>Pending</th><th>Matched</th><th>Flagged</th><th>Status</th><th>Latest activity</th><th></th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><span class="mono fw-semibold">{{ row.reference }}</span></td>
+          {% if current_user.is_admin or current_user.is_auditor %}
+          <td><span class="mono">{{ row.origin.shop_code }}</span><div class="text-muted small">{{ row.origin.name }}</div></td>
+          <td><span class="mono">{{ row.destination.shop_code }}</span><div class="text-muted small">{{ row.destination.name }}</div></td>
+          {% endif %}
+          <td>{{ row.total }}</td><td>{{ row.dispatched }}</td><td>{{ row.received }}</td><td>{{ row.pending }}</td><td>{{ row.matched }}</td><td>{{ row.flagged }}</td>
+          <td>{{ badge(row.status) }}</td>
+          <td class="small">{{ row.latest_receipt_at|dt if row.latest_receipt_at else (row.dispatch_at|dt if row.dispatch_at else row.created_at|dt) }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('pages.consignment_detail', reference=row.reference) }}">Track</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ 12 if current_user.is_admin or current_user.is_auditor else 10 }}" class="text-center text-muted py-4">No consignments match your search.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

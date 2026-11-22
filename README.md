@@ -60,7 +60,7 @@ docs/               architecture.md, setup-guide.md
 
 | Suite | Command | Result at last run |
 |---|---|---|
-| Backend: required scenarios, security, page rendering, reliability/recovery, dashboard counters, bulk registration, privacy and RBAC | `cd backend ; .venv\Scripts\python -m pytest -q` | **136 passed** in the latest run (SQLite + in-memory fake ledger; MySQL concurrency tests run when the test database is available) |
+| Backend: required scenarios, security, page rendering, reliability/recovery, dashboard counters, consignment tracking, bulk registration, privacy and RBAC | `cd backend ; .venv\Scripts\python -m pytest -q` | **152 passed** in the latest run (SQLite + in-memory fake ledger; MySQL concurrency tests run when the test database is available) |
 | Chaincode | `cd fabric\chaincode\pds-contract ; npm test` | **13 passed** (fake ledger stub, not a network) |
 | Live Fabric via Gateway SDK | `cd fabric-gateway ; node src\smoke-test.js` | needs the running network; last run before the latest changes |
 | Full scenario on the running stack (real Fabric) | `backend\.venv\Scripts\python scripts\e2e_demo.py --bag BAG-9001` | 23/23 checks (run on the latest code) |
@@ -87,6 +87,7 @@ The application is implemented and tested against the project requirements:
 - JavaScript chaincode with identity, state-transition, and replay checks
 - QR generation and browser scanning
 - Admin configuration, corrections, reports, and auditor integrity checks
+- Consignment list and tracking dashboards with role-scoped bag counts and reconciliation summaries
 
 See [docs/setup-guide.md](docs/setup-guide.md) for the complete Windows,
 WSL2, Docker, Fabric, database, and application startup procedure.

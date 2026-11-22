@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import func, or_
 
 from ..extensions import db
@@ -5,6 +7,262 @@ from ..models import (Bag, BlockchainTransaction, Consignment, DispatchRecord, F
                       ReceiptRecord, ReconciliationRecord, Role, User)
 from ..models.constants import (ROLE_FPS, ROLE_MLS, STATUS_FLAGGED, STATUS_IN_TRANSIT, STATUS_MATCHED)
 from . import access
+
+
+DERIVED_CONSIGNMENT_STATUSES = (
+    "PENDING",
+    "REGISTERED",
+    "IN_TRANSIT",
+    "RECEIVED",
+    "MATCHED",
+    "FLAGGED",
+)
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value.strip()[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _shop(viewer, loc, as_of=None):
+    if viewer.is_admin or viewer.is_auditor:
+        out = {
+            "id": loc.id,
+            "code": loc.code,
+            "shop_code": loc.shop_code,
+            "name": loc.name,
+            "mandal": loc.mandal,
+            "district": loc.district,
+            "area": loc.area,
+        }
+        if hasattr(loc, "village"):
+            out["village"] = loc.village
+        return out
+    if viewer.is_mls and loc.id == viewer.mls_location_id:
+        return {
+            "id": loc.id,
+            "shop_code": loc.shop_code,
+            "name": loc.name,
+            "mandal": loc.mandal,
+            "district": loc.district,
+            "area": loc.area,
+        }
+    if viewer.is_fps and loc.id == viewer.fps_location_id:
+        out = {
+            "id": loc.id,
+            "shop_code": loc.shop_code,
+            "name": loc.name,
+            "mandal": loc.mandal,
+            "district": loc.district,
+            "area": loc.area,
+        }
+        if hasattr(loc, "village"):
+            out["village"] = loc.village
+        return out
+    return None
+
+
+def consignments_query_for(viewer):
+    q = Consignment.query
+    if viewer.is_admin or viewer.is_auditor:
+        return q
+    if viewer.is_mls and viewer.mls_location_id is not None:
+        return q.filter(Consignment.mls_id == viewer.mls_location_id)
+    if viewer.is_fps and viewer.fps_location_id is not None:
+        return q.filter(Consignment.fps_id == viewer.fps_location_id)
+    return q.filter(db.false())
+
+
+def _consignment_bags(consignment):
+    return Bag.query.filter_by(consignment_id=consignment.id).order_by(Bag.id.asc()).all()
+
+
+def consignment_summary(consignment):
+    bags = _consignment_bags(consignment)
+    total = len(bags)
+    dispatched = 0
+    received = 0
+    matched = 0
+    flagged = 0
+    dispatch_times = []
+    receipt_times = []
+
+    bag_ids = [bag.id for bag in bags]
+    dispatch_by_bag = {}
+    receipt_by_bag = {}
+    reconciliation_by_bag = {}
+    if bag_ids:
+        dispatch_by_bag = {row.bag_pk: row for row in DispatchRecord.query.filter(
+            DispatchRecord.bag_pk.in_(bag_ids)).all()}
+        receipt_by_bag = {row.bag_pk: row for row in ReceiptRecord.query.filter(
+            ReceiptRecord.bag_pk.in_(bag_ids)).all()}
+        reconciliation_by_bag = {row.bag_pk: row for row in ReconciliationRecord.query.filter(
+            ReconciliationRecord.bag_pk.in_(bag_ids)).all()}
+
+    for bag in bags:
+        dispatch = dispatch_by_bag.get(bag.id)
+        if dispatch is not None and dispatch.tx_id:
+            dispatched += 1
+            dispatch_times.append(dispatch.dispatched_at)
+
+        receipt = receipt_by_bag.get(bag.id)
+        if receipt is not None and receipt.tx_id:
+            received += 1
+            receipt_times.append(receipt.received_at)
+
+        reconciliation = reconciliation_by_bag.get(bag.id)
+        if reconciliation is not None:
+            if reconciliation.status == STATUS_MATCHED:
+                matched += 1
+            elif reconciliation.status == STATUS_FLAGGED:
+                flagged += 1
+
+    if total == 0:
+        status = "PENDING"
+    elif flagged:
+        status = "FLAGGED"
+    elif received == total:
+        status = "MATCHED" if matched == total else ("RECEIVED" if matched == 0 else "RECEIVED")
+    elif dispatched or received:
+        status = "IN_TRANSIT"
+    else:
+        status = "REGISTERED"
+
+    return {
+        "total": total,
+        "dispatched": dispatched,
+        "received": received,
+        "pending": total - received,
+        "matched": matched,
+        "flagged": flagged,
+        "status": status,
+        "dispatch_at": max(dispatch_times) if dispatch_times else None,
+        "first_dispatch_at": min(dispatch_times) if dispatch_times else None,
+        "latest_receipt_at": max(receipt_times) if receipt_times else None,
+    }
+
+
+def consignments_list(viewer, reference=None, status=None, date_from=None, date_to=None,
+                      mls_id=None, fps_id=None):
+    q = consignments_query_for(viewer)
+    if reference:
+        ref_like = f"%{reference.strip().upper()[:40]}%"
+        q = q.filter(Consignment.reference.like(ref_like))
+
+    start = _parse_date(date_from)
+    end = _parse_date(date_to)
+    if start:
+        q = q.filter(Consignment.created_at >= start)
+    if end:
+        q = q.filter(Consignment.created_at < datetime(end.year, end.month, end.day).replace(
+            hour=23, minute=59, second=59, microsecond=999999))
+
+    if viewer.is_admin or viewer.is_auditor:
+        if mls_id:
+            try:
+                q = q.filter(Consignment.mls_id == int(mls_id))
+            except (TypeError, ValueError):
+                q = q.filter(db.false())
+        if fps_id:
+            try:
+                q = q.filter(Consignment.fps_id == int(fps_id))
+            except (TypeError, ValueError):
+                q = q.filter(db.false())
+
+    consignments = q.order_by(Consignment.created_at.desc(), Consignment.id.desc()).all()
+    rows = []
+    status_filter = (status or "").strip().upper()
+    for consignment in consignments:
+        summary = consignment_summary(consignment)
+        if status_filter and summary["status"] != status_filter:
+            continue
+        row = {
+            "reference": consignment.reference,
+            "ledger_id": consignment.code if (viewer.is_admin or viewer.is_auditor) else None,
+            "created_at": consignment.created_at,
+            **summary,
+        }
+        if viewer.is_admin or viewer.is_auditor:
+            row["origin"] = _shop(viewer, consignment.mls)
+            row["destination"] = _shop(viewer, consignment.fps)
+        elif viewer.is_mls:
+            row["origin"] = _shop(viewer, consignment.mls)
+        elif viewer.is_fps:
+            row["destination"] = _shop(viewer, consignment.fps)
+        rows.append(row)
+    return rows
+
+
+def consignment_dashboard_summary(viewer):
+    rows = consignments_list(viewer)
+    return {
+        "total": len(rows),
+        "in_transit": sum(row["status"] == "IN_TRANSIT" for row in rows),
+        "fully_received": sum(row["status"] in ("RECEIVED", "MATCHED", "FLAGGED")
+                              and row["received"] == row["total"] and row["total"] > 0 for row in rows),
+        "pending": sum(row["pending"] > 0 for row in rows),
+        "flagged": sum(row["flagged"] > 0 for row in rows),
+    }
+
+
+def consignment_detail(viewer, reference):
+    consignment = consignments_query_for(viewer).filter(
+        Consignment.reference == reference.strip().upper()[:40]).one_or_none()
+    if consignment is None:
+        return None
+
+    summary = consignment_summary(consignment)
+    detail = {
+        "reference": consignment.reference,
+        "created_at": consignment.created_at,
+        "summary": summary,
+        "bags": [],
+    }
+    if viewer.is_admin or viewer.is_auditor:
+        detail["ledger_id"] = consignment.code
+        detail["origin"] = _shop(viewer, consignment.mls)
+        detail["destination"] = _shop(viewer, consignment.fps)
+    elif viewer.is_mls:
+        detail["origin"] = _shop(viewer, consignment.mls)
+    elif viewer.is_fps:
+        detail["destination"] = _shop(viewer, consignment.fps)
+
+    for bag in _consignment_bags(consignment):
+        dispatch = DispatchRecord.query.filter_by(bag_pk=bag.id).first()
+        receipt = access.visible_receipt(viewer, bag)
+        reconciliation = access.visible_reconciliation(viewer, bag)
+
+        bag_detail = {
+            "bag_id": bag.bag_id,
+            "status": bag.status,
+            "dispatch": None,
+            "receipt": None,
+            "difference_kg": None,
+            "reconciliation_status": reconciliation.status if reconciliation else None,
+            "reconciliation_chain_status": reconciliation.chain_status if reconciliation else None,
+        }
+        dispatch_visible = access.visible_dispatch(viewer, bag)
+        if dispatch_visible:
+            bag_detail["dispatch"] = {
+                "weight_kg": str(dispatch_visible.weight_kg),
+                "dispatched_at": dispatch_visible.dispatched_at,
+                "tx_id": dispatch_visible.tx_id,
+            }
+        if receipt:
+            bag_detail["receipt"] = {
+                "weight_kg": str(receipt.weight_kg),
+                "received_at": receipt.received_at,
+                "tx_id": receipt.tx_id,
+            }
+        if reconciliation:
+            bag_detail["difference_kg"] = str(reconciliation.difference_kg)
+            bag_detail["tolerance_kg"] = str(reconciliation.tolerance_kg)
+        detail["bags"].append(bag_detail)
+    return detail
 
 
 def admin_stats():

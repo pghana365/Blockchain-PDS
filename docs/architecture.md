@@ -172,6 +172,7 @@ What each role receives is decided in `services/serializers.py::bag_view`, an al
 * **MLS** sees its own shop and a neutral consignment reference (`CNS-...`). It does not see the FPS shop code, name, district, ledger ID or FPS operator, even after receipt.
 * **FPS** sees its own shop and the neutral consignment reference. It sees nothing about the origin MLS (no name, district, shop code or ledger ID) and, after its receipt is confirmed, the dispatch weight without the dispatcher's identity.
 * **Admin** manages the directory (`/admin/locations`); shop codes are generated server-side and cannot be set or changed by a client. **Auditor** has the same directory read-only.
+* `/consignments` and `/consignments/<reference>` provide read-only consignment tracking. Admin and auditor receive the complete mapping and reconciliation view; MLS and FPS receive SQL-scoped consignments and role-filtered bag data.
 * A bag at another location is rejected with exactly the same 404 as a bag that does not exist, for reads and for dispatch/receive, so bag IDs cannot be probed. Ledger error text is scrubbed of ledger IDs for operators.
 * QR codes contain only the bag URL, and printed labels show only the bag ID and commodity.
 * Names, districts and shop codes are never sent to Fabric. New bags get a random consignment ID (`CONS-XXXXXXXX`) with no route in it.

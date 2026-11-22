@@ -7,6 +7,13 @@
 {% endblock %}
 {% block content %}
 <div class="row g-3 mb-4">
+  {{ stat('Consignments', consignment_stats.total) }}
+  {{ stat('In transit', consignment_stats.in_transit) }}
+  {{ stat('Fully received', consignment_stats.fully_received, 'good') }}
+  {{ stat('Pending', consignment_stats.pending) }}
+  {{ stat('Flagged consignments', consignment_stats.flagged, 'bad') }}
+</div>
+<div class="row g-3 mb-4">
   {{ stat('Bags registered', stats.total_bags) }}
   {{ stat('Bags dispatched', stats.dispatched) }}
   {{ stat('Bags received', stats.received) }}
